@@ -4,7 +4,6 @@
 #include "board.h"
 #include "usbcfg.h"
 #include "tunuino/link.h"
-#include "tunuino/bench_tunerstudio.h"
 #include "board_io.h"
 #include "board_status.h"
 
