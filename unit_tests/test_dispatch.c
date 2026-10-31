@@ -1,5 +1,15 @@
 /* Copyright (c) 2026 Tunuino. */
 #include "tunuino/dispatch.h"
+#include "tunuino/device.h"
+/* No physical device in these host-only dispatcher tests. */
+tunuino_dispatch_status tunuino_device_reply(tunuino_device *device,
+    const tunuino_identity *identity, const uint8_t *request, size_t length,
+    uint8_t *response, size_t capacity, size_t *written) {
+    (void)device; (void)identity; (void)request; (void)length;
+    (void)response; (void)capacity;
+    if (written) *written = 0;
+    return TUNUINO_DISPATCH_UNSUPPORTED;
+}
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
