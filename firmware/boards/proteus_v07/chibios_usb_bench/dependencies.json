@@ -1,0 +1,7 @@
+{
+  "chibios": {
+    "repository": "Tunuino/ChibiOS",
+    "commit": "fd2e59c34878b1ef93ef5358f11fb5cc830027ff",
+    "license": "license.txt"
+  }
+}
