@@ -1,0 +1,42 @@
+name: Proteus F427 firmware
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-check:
+    name: Verify firmware source completeness
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required Proteus build inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            firmware/boards/proteus_v07/chibios_usb_bench/Makefile
+            firmware/boards/proteus_v07/chibios_usb_bench/main.c
+            firmware/boards/proteus_v07/chibios_usb_bench/board.c
+            firmware/boards/proteus_v07/chibios_usb_bench/board_io.c
+            firmware/boards/proteus_v07/chibios_usb_bench/board_outputs.c
+            firmware/boards/proteus_v07/chibios_usb_bench/board_status.c
+            firmware/boards/proteus_v07/chibios_usb_bench/usbcfg.c
+            firmware/boards/proteus_v07/chibios_usb_bench/stm32f427_bench.ld
+            firmware/boards/proteus_v07/chibios_usb_bench/cfg/mcuconf.h
+            firmware/include/tunuino/engine_control.h
+            firmware/include/tunuino/aux_control.h
+          )
+          missing=0
+          for file in "${required[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "::error file=$file::Required firmware build input missing"
+              missing=1
+            fi
+          done
+          if [[ "$missing" != 0 ]]; then
+            echo "Firmware migration is incomplete; refusing to claim a flashable image."
+            exit 1
+          fi
+          echo "Required source inputs present. Compilation and hardware validation remain separate checks."
