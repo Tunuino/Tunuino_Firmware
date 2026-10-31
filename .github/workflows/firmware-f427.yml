@@ -27,6 +27,9 @@ jobs:
             firmware/boards/proteus_v07/chibios_usb_bench/cfg/mcuconf.h
             firmware/include/tunuino/engine_control.h
             firmware/include/tunuino/aux_control.h
+            firmware/boards/proteus_v07/chibios_usb_bench/dependencies.json
+            tools/setup_arm_toolchain.sh
+            LICENSE
           )
           missing=0
           for file in "${required[@]}"; do
@@ -40,3 +43,15 @@ jobs:
             exit 1
           fi
           echo "Required source inputs present. Compilation and hardware validation remain separate checks."
+      - name: Verify pinned ChibiOS dependency
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          lock = json.loads(Path("firmware/boards/proteus_v07/chibios_usb_bench/dependencies.json").read_text())
+          dependency = lock["chibios"]
+          assert dependency["repository"] == "Tunuino/ChibiOS", "Unexpected ChibiOS source"
+          assert len(dependency["commit"]) == 40, "ChibiOS commit must be pinned"
+          print("Pinned ChibiOS:", dependency["repository"], dependency["commit"])
+          PY
