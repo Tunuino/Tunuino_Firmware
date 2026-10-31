@@ -55,3 +55,65 @@ jobs:
           assert len(dependency["commit"]) == 40, "ChibiOS commit must be pinned"
           print("Pinned ChibiOS:", dependency["repository"], dependency["commit"])
           PY
+
+  compile-f427:
+    name: Cross-compile Proteus STM32F427
+    needs: source-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned ChibiOS
+        uses: actions/checkout@v4
+        with:
+          repository: Tunuino/ChibiOS
+          ref: fd2e59c34878b1ef93ef5358f11fb5cc830027ff
+          path: .deps/chibios
+          persist-credentials: false
+      - name: Confirm dependency revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$(python3 -c 'import json; print(json.load(open("firmware/boards/proteus_v07/chibios_usb_bench/dependencies.json"))["chibios"]["commit"])')
+          actual=$(git -C .deps/chibios rev-parse HEAD)
+          test "$actual" = "$expected" || { echo "::error::ChibiOS revision mismatch"; exit 1; }
+      - name: Install ARM toolchain
+        run: bash tools/setup_arm_toolchain.sh
+      - name: Compile firmware and link ELF
+        shell: bash
+        run: |
+          set -euo pipefail
+          make --no-print-directory -C firmware/boards/proteus_v07/chibios_usb_bench \
+            CHIBIOS="$GITHUB_WORKSPACE/.deps/chibios" \
+            BUILDDIR="$GITHUB_WORKSPACE/build/f427" -j2
+      - name: Check generated ARM image
+        shell: bash
+        run: |
+          set -euo pipefail
+          name=tunuino-proteus-v07-f427-usb-bench
+          for ext in elf bin hex map; do
+            test -s "build/f427/$name.$ext" || { echo "::error::Missing $ext output"; exit 1; }
+          done
+          arm-none-eabi-size "build/f427/$name.elf"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          p = Path("build/f427/tunuino-proteus-v07-f427-usb-bench.bin")
+          image = p.read_bytes()
+          assert 8 <= len(image) <= 128 * 1024, "Unexpected image size"
+          stack, reset = struct.unpack_from("<II", image)
+          assert 0x20000000 < stack <= 0x20010000 and stack % 8 == 0, "Invalid stack vector"
+          assert reset & 1 and 0x08000000 <= (reset & ~1) < 0x08000000 + len(image), "Invalid reset vector"
+          print("Image vectors and size verified:", len(image), "bytes")
+          PY
+      - name: Preserve build outputs for inspection (not hardware validated)
+        uses: actions/upload-artifact@v4
+        with:
+          name: f427-build-unverified-${{ github.sha }}
+          path: |
+            build/f427/*.elf
+            build/f427/*.bin
+            build/f427/*.hex
+            build/f427/*.map
+          if-no-files-found: error
+          retention-days: 14
