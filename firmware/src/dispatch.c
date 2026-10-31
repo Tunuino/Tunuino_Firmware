@@ -1,16 +1,7 @@
 /* Copyright (c) 2026 Tunuino. */
 #include "tunuino/dispatch.h"
-#include "tunuino/bench_tunerstudio.h"
 #include "tunuino/device.h"
 #include <string.h>
-
-static int bench_ts_enabled(const tunuino_identity *id) {
-    return id->family == TUNUINO_PROTEUS && id->mcu_series == TUNUINO_STM32_F4
-        && id->hardware_revision == 7 && id->capabilities == 0
-        && id->firmware_major == TUNUINO_BENCH_MAJOR
-        && id->firmware_minor == TUNUINO_BENCH_MINOR
-        && id->firmware_patch == TUNUINO_BENCH_PATCH;
-}
 
 tunuino_dispatch_status tunuino_dispatch_plain_reply(const tunuino_dispatch_context *c,
     uint8_t command, uint8_t *response, size_t capacity, size_t *written) {
@@ -38,46 +29,7 @@ tunuino_dispatch_status tunuino_dispatch_plain_reply(const tunuino_dispatch_cont
         if(capacity<count)return TUNUINO_DISPATCH_CAPACITY;
         memcpy(response,text,count);*written=count;return TUNUINO_DISPATCH_OK;
     }
-    if (!bench_ts_enabled(c->identity)) return TUNUINO_DISPATCH_UNKNOWN_REQUEST;
-    const char *text;
-    size_t length;
-    switch (command) {
-        case 'Q': case 'S': text = TUNUINO_TS_SIGNATURE; length = sizeof(TUNUINO_TS_SIGNATURE); break;
-        case 'V': text = TUNUINO_BENCH_VERSION; length = sizeof(TUNUINO_BENCH_VERSION); break;
-        case 'F': text = "001"; length = 3; break;
-        default: return TUNUINO_DISPATCH_UNKNOWN_REQUEST;
-    }
-    if (capacity < length) return TUNUINO_DISPATCH_CAPACITY;
-    memcpy(response, text, length);
-    *written = length;
-    return TUNUINO_DISPATCH_OK;
-}
-
-static tunuino_dispatch_status bench_ts_reply(const tunuino_dispatch_context *c,
-    const uint8_t *q, size_t length, uint8_t *response, size_t capacity, size_t *written) {
-    uint8_t body[1 + sizeof(TUNUINO_TS_SIGNATURE) + sizeof(TUNUINO_BENCH_VERSION)] = {0};
-    size_t size = 1;
-    if (length == 1 && (q[0] == 'Q' || q[0] == 'S' || q[0] == 'V' || q[0] == 'F')) {
-        tunuino_dispatch_status status = tunuino_dispatch_plain_reply(c,q[0],body+1,sizeof(body)-1,&size);
-        if (status != TUNUINO_DISPATCH_OK) return status;
-        ++size; /* Envelope status byte precedes the response data. */
-    } else if (length == 1 && q[0] == 'A') {
-        /* Reuse the native identity serializer. After the envelope status byte
-         * this is exactly the 31-byte, big-endian INI output-channel block. */
-        uint8_t request[14];
-        size_t count;
-        if (tunuino_frame_encode((const uint8_t *)"TUNUINO?",8,request,sizeof(request),&count) != TUNUINO_FRAME_OK)
-            return TUNUINO_DISPATCH_SOURCE_ERROR;
-        tunuino_identity_status status = tunuino_identity_reply(c->identity,request,count,response,capacity,written);
-        return status == TUNUINO_IDENTITY_OK ? TUNUINO_DISPATCH_OK
-            : status == TUNUINO_IDENTITY_CAPACITY ? TUNUINO_DISPATCH_CAPACITY : TUNUINO_DISPATCH_SOURCE_ERROR;
-    } else if (length == 1 && q[0] == 'R') {
-        body[1] = 1; size = 2; /* One immutable schema byte, not engine calibration. */
-    } else {
-        body[0] = 0x83; /* MS envelope: unrecognized/unsupported command. No write or burn. */
-    }
-    return tunuino_frame_encode(body,size,response,capacity,written) == TUNUINO_FRAME_OK
-        ? TUNUINO_DISPATCH_OK : TUNUINO_DISPATCH_CAPACITY;
+    return TUNUINO_DISPATCH_UNKNOWN_REQUEST;
 }
 
 tunuino_dispatch_status tunuino_dispatch_validate(const tunuino_dispatch_context *c) {
@@ -155,8 +107,5 @@ tunuino_dispatch_status tunuino_dispatch_reply(const tunuino_dispatch_context *c
             : status == TUNUINO_MAP_READ_BAD_REQUEST ? TUNUINO_DISPATCH_BAD_REQUEST : TUNUINO_DISPATCH_SOURCE_ERROR;
     }
     if (c->device!=NULL) return tunuino_device_reply(c->device,c->identity,q,length,response_packet,capacity,written);
-    if (bench_ts_enabled(c->identity)) {
-        return bench_ts_reply(c,q,length,response_packet,capacity,written);
-    }
     return TUNUINO_DISPATCH_UNKNOWN_REQUEST;
 }
