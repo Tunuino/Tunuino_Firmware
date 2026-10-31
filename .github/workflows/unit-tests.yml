@@ -30,6 +30,7 @@ jobs:
             firmware/src/identity.c \
             firmware/src/live_data.c \
             firmware/src/map_read.c \
+            firmware/src/calibration.c \
             firmware/src/dispatch.c \
-            -o build/tests/test_dispatch
+            -lm -o build/tests/test_dispatch
           ./build/tests/test_dispatch
