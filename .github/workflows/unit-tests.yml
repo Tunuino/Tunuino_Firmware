@@ -1,0 +1,35 @@
+name: Firmware protocol unit tests
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  protocol:
+    name: Native protocol tests (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and execute dispatcher tests
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/tests
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ifirmware/include \
+            unit_tests/test_dispatch.c \
+            firmware/src/frame.c \
+            firmware/src/identity.c \
+            firmware/src/live_data.c \
+            firmware/src/map_read.c \
+            firmware/src/dispatch.c \
+            -o build/tests/test_dispatch
+          ./build/tests/test_dispatch
