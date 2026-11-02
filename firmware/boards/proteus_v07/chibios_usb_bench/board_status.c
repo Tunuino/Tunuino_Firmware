@@ -59,10 +59,11 @@ static void engine_tick(virtual_timer_t *timer, void *argument) {
     (void)argument;
     chSysLockFromISR();
     if (startup_step >= 2) {
-        running_on = !critical() && (rotating ? !running_on : cranking);
+        /* Heartbeat: prove that the RTOS timer is running even at zero RPM. */
+        running_on = !critical() && !running_on;
         led(5, running_on);
     }
-    chVTSetI(timer, TIME_MS2I(50), engine_tick, NULL);
+    chVTSetI(timer, TIME_MS2I(250), engine_tick, NULL);
     chSysUnlockFromISR();
 }
 
@@ -80,7 +81,7 @@ void board_status_start(void) {
     chVTObjectInit(&communication_timer);
     chVTObjectInit(&engine_timer);
     chVTSet(&communication_timer, TIME_MS2I(100), communication_tick, NULL);
-    chVTSet(&engine_timer, TIME_MS2I(50), engine_tick, NULL);
+    chVTSet(&engine_timer, TIME_MS2I(250), engine_tick, NULL);
 }
 
 void board_status_usb(bool ready) {
