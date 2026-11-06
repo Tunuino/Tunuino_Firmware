@@ -23,6 +23,8 @@ typedef struct {
     uint64_t last_wall_us, last_event_us, last_crank_us;
     unsigned configured, have_crank, have_deferred, expired;
     tunuino_capture_process_status state;
+    void (*scope_observer)(void *user,tunuino_capture_event event);
+    void *scope_user;
     tunuino_capture_status queue_status;
     tunuino_position_status decoder_status;
 } tunuino_capture_processor;

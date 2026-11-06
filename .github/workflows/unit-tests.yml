@@ -34,3 +34,14 @@ jobs:
             firmware/src/dispatch.c \
             -lm -o build/tests/test_dispatch
           ./build/tests/test_dispatch
+      - name: Compile and execute trigger scope tests
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ifirmware/include unit_tests/test_scope.c firmware/src/*.c \
+            -lm -o build/tests/test_scope
+          ./build/tests/test_scope

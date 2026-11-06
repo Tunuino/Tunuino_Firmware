@@ -43,6 +43,7 @@ tunuino_capture_process_status tunuino_capture_processor_init(tunuino_capture_pr
     if (p == NULL) { return TUNUINO_PROCESS_ARGUMENT; }
     /* No concurrent producer/consumer allowed during initialization. */
     p->configured = 0; p->state = TUNUINO_PROCESS_ARGUMENT;
+    p->scope_observer=NULL;p->scope_user=NULL;
     memset(&p->cached,0,sizeof(p->cached));
     if (config == NULL) { return p->state; }
     p->decoder_status = tunuino_position_init(&p->position,config,now);
@@ -84,6 +85,7 @@ tunuino_capture_process_status tunuino_capture_processor_drain(tunuino_capture_p
         } else {
             p->decoder_status = tunuino_position_cam_edge(&p->position,event.time_us);
         }
+        if(p->scope_observer)p->scope_observer(p->scope_user,event);
         ++*processed;
         p->decoder_status = tunuino_position_read(&p->position,event.time_us,&p->cached);
         (void)tunuino_position_cam_read(&p->position,event.time_us,&p->cached_cam);

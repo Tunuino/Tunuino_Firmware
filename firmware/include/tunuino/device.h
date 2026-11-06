@@ -12,7 +12,7 @@
 /* Serial protocol discovery version. 001 supports the CRC-wrapped envelope.
  * Independent of the application firmware version and INI revision. */
 #define TUNUINO_IO_TS_SERIAL_VERSION "001"
-#define TUNUINO_IO_CAPABILITIES UINT32_C(15)
+#define TUNUINO_IO_CAPABILITIES UINT32_C(31)
 #define TUNUINO_IO_OUTPUT_SIZE 100u
 /* Native read-only TUNUINO:E response: status, format, valid, reasons,
  * VE centi-percent, ignition centi-degrees (signed), RPM milli, MAP milli,
@@ -69,6 +69,8 @@ typedef struct tunuino_device {
     void *user;
     tunuino_device_output_command output_command;
     void *output_user;
+    tunuino_device_output_command scope_command;
+    void *scope_user;
     bool (*configuration_writable)(void);
     tunuino_cam_reading cam;
     uint64_t position_time_us;

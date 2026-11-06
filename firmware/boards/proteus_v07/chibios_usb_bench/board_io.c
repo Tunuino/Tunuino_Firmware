@@ -9,10 +9,12 @@
 #include "board_status.h"
 #include "tunuino/config_journal.h"
 #include "tunuino/capture_source.h"
+#include "tunuino/trigger_scope.h"
 #include <string.h>
 
 static tunuino_config_journal journal;
 static tunuino_capture_source capture;
+static tunuino_trigger_scope trigger_scope;
 static uint32_t applied_generation, last_adc_start, last_adc_good;
 static uint16_t raw[16];
 static adcsample_t adc_samples[16*4];
@@ -124,12 +126,19 @@ static void configure_capture(tunuino_device *d,uint64_t now){
         palSetPadCallback(GPIOE,8,edge_callback,(void *)(uintptr_t)1);
         palEnablePadEvent(GPIOE,7,PAL_EVENT_MODE_RISING_EDGE);palEnablePadEvent(GPIOE,8,PAL_EVENT_MODE_RISING_EDGE);
     }
+    tunuino_scope_reset(&trigger_scope,d->generation);
+    capture.processor.scope_observer=tunuino_scope_record;capture.processor.scope_user=&trigger_scope;
     applied_generation=d->generation;
 }
 void board_io_resync(tunuino_device *d){board_outputs_stop();configure_capture(d,board_io_time_us());}
 void board_io_usb_recover(tunuino_device *d){if(!board_outputs_autonomous())board_io_resync(d);}
 void board_io_phase(tunuino_device *d,uint8_t first,uint8_t last,uint8_t phase){
     cam_first=first;cam_last=last;cam_phase=phase;board_io_resync(d);
+}
+static bool scope_command(void *user,const uint8_t *q,size_t length,uint8_t *out,size_t capacity,size_t *written){
+    (void)user;const bool healthy=trigger_enabled&&capture.processor.state!=TUNUINO_PROCESS_QUEUE_FAULT
+        &&capture.processor.state!=TUNUINO_PROCESS_CLOCK&&capture.processor.state!=TUNUINO_PROCESS_ARGUMENT;
+    return tunuino_scope_reply(&trigger_scope,healthy,q,length,out,capacity,written);
 }
 void board_io_start(tunuino_device *d){
     _Static_assert(STM32_TIMCLK1%1000000u==0,"TIM2 clock must support 1 us");
@@ -138,6 +147,7 @@ void board_io_start(tunuino_device *d){
     TIM2->CR1=0;TIM2->PSC=STM32_TIMCLK1/1000000u-1u;TIM2->ARR=UINT32_MAX;
     TIM2->EGR=TIM_EGR_UG;TIM2->CNT=0;TIM2->CR1=TIM_CR1_CEN;
     board_outputs_start(d);
+    d->scope_command=scope_command;d->scope_user=NULL;
     for(unsigned pin=0;pin<8;++pin)palSetPadMode(GPIOA,pin,PAL_MODE_INPUT_ANALOG);
     for(unsigned pin=0;pin<6;++pin)palSetPadMode(GPIOC,pin,PAL_MODE_INPUT_ANALOG);
     palSetPadMode(GPIOB,0,PAL_MODE_INPUT_ANALOG);palSetPadMode(GPIOB,1,PAL_MODE_INPUT_ANALOG);

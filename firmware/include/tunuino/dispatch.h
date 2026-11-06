@@ -13,6 +13,7 @@
 #define TUNUINO_DISPATCH_MAP_READ UINT32_C(2)
 #define TUNUINO_DISPATCH_PARTIAL UINT32_C(4)
 #define TUNUINO_DISPATCH_IO UINT32_C(8)
+#define TUNUINO_DISPATCH_SCOPE UINT32_C(16)
 struct tunuino_device;
 /* Board-owned snapshots. Serialize dispatch with all updates, including DMA/ISR
  * producers. live_mailbox may transfer acquisition data to a USB-owner local
