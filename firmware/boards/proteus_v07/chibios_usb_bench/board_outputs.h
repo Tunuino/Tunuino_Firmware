@@ -9,4 +9,5 @@ bool board_outputs_autonomous(void);
 void board_outputs_update(tunuino_device *device,const tunuino_position_reading *position,uint32_t edge,uint32_t now);
 void board_outputs_stop(void);
 bool board_outputs_idle(void);
+uint8_t board_outputs_fault(void);
 #endif

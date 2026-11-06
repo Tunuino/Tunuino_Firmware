@@ -45,3 +45,14 @@ jobs:
             -Ifirmware/include unit_tests/test_scope.c firmware/src/*.c \
             -lm -o build/tests/test_scope
           ./build/tests/test_scope
+      - name: Compile and execute service persistence tests
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ifirmware/include unit_tests/test_service.c firmware/src/*.c \
+            -lm -o build/tests/test_service
+          ./build/tests/test_service

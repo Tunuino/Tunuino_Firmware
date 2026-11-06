@@ -38,17 +38,18 @@ tunuino_dispatch_status tunuino_dispatch_validate(const tunuino_dispatch_context
         return TUNUINO_DISPATCH_UNCONFIGURED;
     }
     uint32_t caps = c->identity->capabilities;
-    if ((caps & ~(TUNUINO_DISPATCH_LIVE | TUNUINO_DISPATCH_MAP_READ | TUNUINO_DISPATCH_PARTIAL | TUNUINO_DISPATCH_IO | TUNUINO_DISPATCH_SCOPE)) != 0
+    if ((caps & ~(TUNUINO_DISPATCH_LIVE | TUNUINO_DISPATCH_MAP_READ | TUNUINO_DISPATCH_PARTIAL | TUNUINO_DISPATCH_IO | TUNUINO_DISPATCH_SCOPE | TUNUINO_DISPATCH_SERVICE)) != 0
         || ((caps & TUNUINO_DISPATCH_LIVE) != 0 && c->live == NULL)) {
         return TUNUINO_DISPATCH_UNCONFIGURED;
     }
     if ((caps & (TUNUINO_DISPATCH_PARTIAL|TUNUINO_DISPATCH_IO))!=0
-        && (c->device==NULL || (caps!=UINT32_C(15)&&caps!=TUNUINO_IO_CAPABILITIES) || c->identity->family!=TUNUINO_PROTEUS
+        && (c->device==NULL || (caps!=UINT32_C(15)&&caps!=UINT32_C(31)&&caps!=TUNUINO_IO_CAPABILITIES) || c->identity->family!=TUNUINO_PROTEUS
             ||c->identity->mcu_series!=TUNUINO_STM32_F4||c->identity->hardware_revision!=7
             ||c->identity->firmware_major!=0||c->identity->firmware_minor!=2||c->identity->firmware_patch!=0))
         return TUNUINO_DISPATCH_UNCONFIGURED;
-    if (c->device!=NULL && (caps!=UINT32_C(15)&&caps!=TUNUINO_IO_CAPABILITIES))return TUNUINO_DISPATCH_UNCONFIGURED;
+    if (c->device!=NULL && (caps!=UINT32_C(15)&&caps!=UINT32_C(31)&&caps!=TUNUINO_IO_CAPABILITIES))return TUNUINO_DISPATCH_UNCONFIGURED;
     if((caps&TUNUINO_DISPATCH_SCOPE)!=0&&(c->device==NULL||c->device->scope_command==NULL))return TUNUINO_DISPATCH_UNCONFIGURED;
+    if((caps&TUNUINO_DISPATCH_SERVICE)!=0&&(c->device==NULL||c->device->service_command==NULL))return TUNUINO_DISPATCH_UNCONFIGURED;
     if ((caps & TUNUINO_DISPATCH_MAP_READ) != 0) {
         if ((c->ve == NULL && c->ignition == NULL)
             || (c->ve != NULL && c->ve->generation != 0 && c->ve->kind != TUNUINO_MAP_VE)

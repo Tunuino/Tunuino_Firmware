@@ -204,3 +204,5 @@ void board_outputs_update(tunuino_device *d,const tunuino_position_reading *posi
     }
     timer_schedule();chSysUnlock();
 }
+
+uint8_t board_outputs_fault(void){return engine.outputs.fault;}

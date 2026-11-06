@@ -13,6 +13,10 @@
 #include <string.h>
 
 static tunuino_config_journal journal;
+static tunuino_service_data service;
+static tunuino_device *service_device;
+static uint64_t stopped_since,last_checkpoint;
+static bool stopped_tracking;
 static tunuino_capture_source capture;
 static tunuino_trigger_scope trigger_scope;
 static uint32_t applied_generation, last_adc_start, last_adc_good;
@@ -98,9 +102,11 @@ static bool flash_erase(void *user,unsigned bank){
 }
 bool board_io_save(void *user,const uint8_t *bytes,size_t length){
     (void)user;
-    if(!board_outputs_idle() || length!=TUNUINO_IO_SETTINGS_SIZE)return false;
+    if(!board_outputs_idle() || service.uncertain || length!=TUNUINO_IO_SETTINGS_SIZE)return false;
     board_status_flash(true);
-    bool saved=tunuino_journal_save(&journal,bytes);
+    uint8_t next[TUNUINO_SERVICE_SIZE];tunuino_service_prepare(&service,board_io_time_us()/1000,next);
+    bool saved=tunuino_journal_save_combined(&journal,bytes,next,true);
+    if(saved){tunuino_service_committed(&service,next);last_checkpoint=board_io_time_us()/1000;}else service.uncertain=true;
     board_status_flash(false);
     return saved;
 }
@@ -140,6 +146,19 @@ static bool scope_command(void *user,const uint8_t *q,size_t length,uint8_t *out
         &&capture.processor.state!=TUNUINO_PROCESS_CLOCK&&capture.processor.state!=TUNUINO_PROCESS_ARGUMENT;
     return tunuino_scope_reply(&trigger_scope,healthy,q,length,out,capacity,written);
 }
+static bool service_writable(const tunuino_device *d){
+    return board_outputs_idle()&&!d->dirty&&d->adc_valid&&d->raw[11]>=810&&d->raw[11]<4095
+        &&!d->trigger_valid&&d->live.rpm_milli==0
+        &&(!trigger_enabled||capture.processor.state==TUNUINO_PROCESS_NO_SIGNAL);
+}
+static bool service_save(void *user,const uint8_t bytes[TUNUINO_SERVICE_SIZE]){
+    tunuino_device *d=user;if(!service_writable(d)||service.uncertain)return false;
+    board_status_flash(true);bool okay=tunuino_journal_save_service(&journal,d->active,bytes);board_status_flash(false);if(okay)last_checkpoint=board_io_time_us()/1000;return okay;
+}
+static bool service_command(void *user,const uint8_t *q,size_t length,uint8_t *out,size_t cap,size_t *written){
+    tunuino_device *d=user;return tunuino_service_reply(&service,d->generation,board_io_time_us()/1000,
+        service_writable(d),service_save,d,q,length,out,cap,written);
+}
 void board_io_start(tunuino_device *d){
     _Static_assert(STM32_TIMCLK1%1000000u==0,"TIM2 clock must support 1 us");
     RCC->AHB1ENR|=RCC_AHB1ENR_GPIOBEN|RCC_AHB1ENR_GPIOCEN|RCC_AHB1ENR_GPIOEEN;
@@ -154,7 +173,9 @@ void board_io_start(tunuino_device *d){
     palSetPadMode(GPIOE,7,PAL_MODE_INPUT);palSetPadMode(GPIOE,8,PAL_MODE_INPUT);
     adcStart(&ADCD1,NULL);
     const tunuino_journal_io io={flash_read,flash_program,flash_erase,NULL};uint8_t saved[TUNUINO_IO_SETTINGS_SIZE];
-    if(tunuino_journal_init(&journal,&io,saved))(void)tunuino_device_restore(d,saved,sizeof(saved));
+    if(tunuino_journal_init(&journal,&io,saved)&&journal.calibration_persisted)(void)tunuino_device_restore(d,saved,sizeof(saved));
+    tunuino_service_init(&service,journal.service);service.uncertain=!journal.healthy;
+    service_device=d;d->service_command=service_command;d->service_user=d;
     board_outputs_restore(d,true);
     configure_capture(d,board_io_time_us());
 }
@@ -195,4 +216,12 @@ void board_io_update(tunuino_device *d){
         (uint32_t)(position.rpm*1000+0.5),position.crank_valid!=0,position.tooth_index,trigger_errors);
     tunuino_device_position(d,board_io_time_us(),&position,&cam);
     board_outputs_update(d,&position,(uint32_t)crank_edge,TIM2->CNT);
+    tunuino_service_sample(&service,d,now/1000,board_outputs_fault());
+    if(service_device&&service_writable(d)&&!service.uncertain){
+        if(!stopped_tracking){stopped_since=now/1000;stopped_tracking=true;}
+        if(now/1000-stopped_since>=2000&&(!last_checkpoint||now/1000-last_checkpoint>=60000)&&tunuino_service_pending(&service)){
+            uint8_t next[TUNUINO_SERVICE_SIZE];tunuino_service_prepare(&service,now/1000,next);last_checkpoint=now/1000;
+            if(service_save(d,next))tunuino_service_committed(&service,next);else service.uncertain=true;
+        }
+    }else stopped_tracking=false;
 }

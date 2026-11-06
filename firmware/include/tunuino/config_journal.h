@@ -3,8 +3,9 @@
 #define TUNUINO_CONFIG_JOURNAL_H
 #include <stdbool.h>
 #include "tunuino/device.h"
+#include "tunuino/service_data.h"
 #define TUNUINO_JOURNAL_BANK_BYTES (128u*1024u)
-#define TUNUINO_JOURNAL_RECORD_BYTES (TUNUINO_IO_SETTINGS_SIZE+32u)
+#define TUNUINO_JOURNAL_RECORD_BYTES (TUNUINO_IO_SETTINGS_SIZE+TUNUINO_SERVICE_SIZE+36u)
 typedef struct {
     bool (*read)(void *user,unsigned bank,size_t offset,uint8_t *bytes,size_t length);
     bool (*program)(void *user,unsigned bank,size_t offset,const uint8_t *bytes,size_t length);
@@ -17,8 +18,12 @@ typedef struct {
     unsigned bank;
     size_t offset;
     bool found;
-    bool legacy;
+    bool legacy,healthy,calibration_persisted;
+    unsigned format;
+    uint8_t service[TUNUINO_SERVICE_SIZE];
 } tunuino_config_journal;
 bool tunuino_journal_init(tunuino_config_journal *journal,const tunuino_journal_io *io,uint8_t settings[TUNUINO_IO_SETTINGS_SIZE]);
+bool tunuino_journal_save_combined(tunuino_config_journal *journal,const uint8_t settings[TUNUINO_IO_SETTINGS_SIZE],const uint8_t service[TUNUINO_SERVICE_SIZE],bool calibration_persisted);
+bool tunuino_journal_save_service(tunuino_config_journal *journal,const uint8_t settings[TUNUINO_IO_SETTINGS_SIZE],const uint8_t service[TUNUINO_SERVICE_SIZE]);
 bool tunuino_journal_save(tunuino_config_journal *journal,const uint8_t settings[TUNUINO_IO_SETTINGS_SIZE]);
 #endif

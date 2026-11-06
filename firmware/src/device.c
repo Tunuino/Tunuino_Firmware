@@ -313,7 +313,10 @@ bool tunuino_device_engine_values(tunuino_device *d,uint16_t *ve,int16_t *advanc
 tunuino_dispatch_status tunuino_device_reply(tunuino_device *d,const tunuino_identity *id,
     const uint8_t *q,size_t length,uint8_t *response,size_t capacity,size_t *written) {
     uint8_t body[257]={0};size_t size=1;
-    if(length>=10 && memcmp(q,"TUNUINO:S",9)==0 && (id->capabilities&TUNUINO_DISPATCH_SCOPE)!=0 && d->scope_command){
+    if(length>=10 && memcmp(q,"TUNUINO:N",9)==0 && (id->capabilities&TUNUINO_DISPATCH_SERVICE)!=0 && d->service_command){
+        if(!d->service_command(d->service_user,q+9,length-9,body,sizeof(body),&size)){body[0]=0x84;size=1;}
+    }
+    else if(length>=10 && memcmp(q,"TUNUINO:S",9)==0 && (id->capabilities&TUNUINO_DISPATCH_SCOPE)!=0 && d->scope_command){
         if(!d->scope_command(d->scope_user,q+9,length-9,body,sizeof(body),&size)){body[0]=0x84;size=1;}
     }
     else if(length>=10 && memcmp(q,"TUNUINO:X",9)==0 && d->output_command){
