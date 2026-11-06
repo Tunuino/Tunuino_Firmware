@@ -217,7 +217,10 @@ void board_io_update(tunuino_device *d){
     tunuino_device_position(d,board_io_time_us(),&position,&cam);
     board_outputs_update(d,&position,(uint32_t)crank_edge,TIM2->CNT);
     tunuino_service_sample(&service,d,now/1000,board_outputs_fault());
-    if(service_device&&service_writable(d)&&!service.uncertain){
+    /* Background erase/program must not block an enumerated USB transaction.
+     * With USB active, only explicit service saves / calibration Burn may write. */
+    chSysLock();const bool background_flash=usbGetDriverStateI(&USBD1)!=USB_ACTIVE;chSysUnlock();
+    if(background_flash&&service_device&&service_writable(d)&&!service.uncertain){
         if(!stopped_tracking){stopped_since=now/1000;stopped_tracking=true;}
         if(now/1000-stopped_since>=2000&&(!last_checkpoint||now/1000-last_checkpoint>=60000)&&tunuino_service_pending(&service)){
             uint8_t next[TUNUINO_SERVICE_SIZE];tunuino_service_prepare(&service,now/1000,next);last_checkpoint=now/1000;
