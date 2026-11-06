@@ -23,6 +23,7 @@ int main(void){
     query[0]=0;assert(tunuino_scope_reply(&scope,false,query,1,reply,sizeof(reply),&written)&&!reply[2]);
     tunuino_device device;tunuino_device_init(&device,NULL,NULL,NULL);device.scope_command=hook;device.scope_user=&scope;
     tunuino_identity identity={TUNUINO_PROTEUS,TUNUINO_STM32_F4,7,0,2,0,TUNUINO_IO_CAPABILITIES,{42}};
+    tunuino_scope_reset(&scope,device.generation);
     tunuino_scope_record(&scope,(tunuino_capture_event){1000,TUNUINO_CAPTURE_CRANK});
     uint8_t packet[512];const uint8_t *body;size_t body_size;
     assert(tunuino_device_reply(&device,&identity,(const uint8_t*)"TUNUINO:S\0",10,packet,sizeof(packet),&written)==TUNUINO_DISPATCH_OK);
