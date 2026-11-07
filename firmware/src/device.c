@@ -36,12 +36,14 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
     if (p==NULL || (length!=TUNUINO_IO_SETTINGS_SIZE&&length!=TUNUINO_IO_LEGACY_SIZE)) return TUNUINO_CONFIG_SCHEMA;
     uint32_t errors=0;
     if(tunuino_device_u16(p)!=TUNUINO_IO_SCHEMA || p[5]!=0 || p[9]!=0) errors|=TUNUINO_CONFIG_SCHEMA;
-    for(unsigned i=27;i<32;++i) if(p[i]!=0) errors|=TUNUINO_CONFIG_SCHEMA;
+    bool locked=false;int16_t locked_angle=0;
+    if(!tunuino_ignition_lock_decode(p+27,&locked,&locked_angle))errors|=TUNUINO_CONFIG_TRIGGER;
     for(unsigned i=98;i<100;++i) if(p[i]!=0) errors|=TUNUINO_CONFIG_SCHEMA;
     tunuino_fuel_corrections fueling;
     if(!tunuino_fuel_corrections_decode(p+103,&fueling))errors|=TUNUINO_CONFIG_FUELING;
     bool has_profile=false;
     for(unsigned i=128;i<256;++i)if(p[i])has_profile=true;
+    if(locked&&(!has_profile||!p[2]))errors|=TUNUINO_CONFIG_TRIGGER;
     tunuino_engine_profile profile;
     if(has_profile&&!tunuino_engine_profile_decode(p+128,p[3],p[4],&profile))errors|=TUNUINO_CONFIG_ENGINE;
     if(length==TUNUINO_IO_SETTINGS_SIZE){

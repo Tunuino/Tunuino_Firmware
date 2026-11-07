@@ -143,7 +143,7 @@ void board_outputs_restore(tunuino_device *d,bool boot){
     board_outputs_stop();loaded_generation=d->generation;
     memset(&auxiliary,0,sizeof(auxiliary));
     memset(&engine.features,0,sizeof(engine.features));memset(&engine.feature_inputs,0,sizeof(engine.feature_inputs));
-    autonomous=persisted_profile=false;engine.configured=0;
+    autonomous=persisted_profile=false;engine.configured=0;engine.ignition_locked=false;engine.locked_angle=0;
     if(!d->persisted||d->dirty||!tunuino_device_validate(d->active,sizeof(d->active)))return;
     (void)tunuino_aux_decode(d->active+TUNUINO_IO_AUX_OFFSET,0,true,&auxiliary.config);
     (void)tunuino_features_decode(d->active+TUNUINO_IO_AUX_OFFSET,&engine.features);
@@ -151,7 +151,7 @@ void board_outputs_restore(tunuino_device *d,bool boot){
     bool okay=tunuino_engine_control_configure(&engine,d->active+TUNUINO_ENGINE_PROFILE_OFFSET,
         d->active[3],d->active[4],d->generation);
     chSysUnlock();
-    if(!okay)return;
+    if(!okay||!tunuino_engine_control_lock(&engine,d->active+27))return;
     (void)tunuino_fuel_corrections_decode(d->active+103,&engine.fueling);
     board_io_phase(d,engine.profile.cam_first,engine.profile.cam_last,engine.profile.cam_phase);
     persisted_profile=true;autonomous=d->active[TUNUINO_ENGINE_POLICY_OFFSET]==1;

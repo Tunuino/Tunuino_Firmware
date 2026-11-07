@@ -3,6 +3,23 @@
 #include <math.h>
 #include <string.h>
 static uint32_t angle(int64_t value){int64_t a=value%72000;return (uint32_t)(a<0?a+72000:a);}
+/* Header bytes 27..31: optional format, enable, reserved, signed angle.
+ * No extension is the legacy inactive configuration. Calibration never arms. */
+bool tunuino_ignition_lock_decode(const uint8_t p[5],bool *enabled,int16_t *locked){
+    if(!p||!enabled||!locked||p[0]>1||p[1]>1||p[2])return false;
+    uint16_t raw=(uint16_t)((uint16_t)p[3]<<8|p[4]);
+    int32_t value=raw<32768?(int32_t)raw:(int32_t)raw-65536;
+    if((!p[0]&&(p[1]||raw))||value< -1000||value>6000)return false;
+    *enabled=p[1]!=0;*locked=(int16_t)value;return true;
+}
+bool tunuino_engine_control_lock(tunuino_engine_control *e,const uint8_t p[5]){
+    bool on;int16_t value;if(!e||e->outputs.armed||!tunuino_ignition_lock_decode(p,&on,&value))return false;
+    e->ignition_locked=on;e->locked_angle=value;return true;
+}
+int32_t tunuino_engine_spark_advance(const tunuino_engine_control *e,unsigned cylinder,int32_t adjusted){
+    if(e->ignition_locked)return e->locked_angle;
+    return adjusted+((e->features.flags&TUNUINO_FEATURE_TRIMS)?e->features.spark_trim[cylinder]:0);
+}
 void tunuino_engine_control_init(tunuino_engine_control *e,tunuino_output_write write,void *user){
     memset(e,0,sizeof(*e));tunuino_outputs_init(&e->outputs,write,user);
 }
@@ -117,8 +134,8 @@ void tunuino_engine_control_update(tunuino_engine_control *e,uint32_t now,uint32
     e->last_injection_us=f->fuel_cut?0:injection;
     for(unsigned i=0;i<e->profile.cylinders;++i){const tunuino_cylinder *c=&e->profile.cylinder[i];
         uint32_t cylinder_fuel=(uint32_t)corrected;
-        int32_t spark=adjusted;
-        if(e->features.flags&TUNUINO_FEATURE_TRIMS){cylinder_fuel=(uint32_t)((corrected*(uint32_t)(10000+e->features.fuel_trim[i])+5000)/10000);spark+=e->features.spark_trim[i];}
+        int32_t spark=tunuino_engine_spark_advance(e,i,adjusted);
+        if(e->features.flags&TUNUINO_FEATURE_TRIMS){cylinder_fuel=(uint32_t)((corrected*(uint32_t)(10000+e->features.fuel_trim[i])+5000)/10000);}
         cylinder_fuel+=f->dead_us;
         if(spark< -9000||spark>9000||(!f->fuel_cut&&(cylinder_fuel>e->profile.maximum_injection_us||cylinder_fuel>duty_limit))){tunuino_engine_control_stop(e,TUNUINO_OUTPUT_CALIBRATION);return;}
         if(f->fuel_cut)tunuino_outputs_cancel_injector(&e->outputs,c->injector);

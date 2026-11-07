@@ -22,6 +22,8 @@ typedef struct {
     tunuino_feature_config features;
     tunuino_feature_inputs feature_inputs;
     tunuino_feature_state feature_state;
+    bool ignition_locked;
+    int16_t locked_angle;
     uint32_t generation,armed_at,last_now,last_angle,cycle;
     uint32_t last_injection_us;
     uint32_t scheduled_cycle[28];
@@ -29,6 +31,9 @@ typedef struct {
 } tunuino_engine_control;
 bool tunuino_engine_profile_decode(const uint8_t bytes[128],uint16_t wheel_slots,
     uint8_t missing,tunuino_engine_profile *profile);
+bool tunuino_ignition_lock_decode(const uint8_t bytes[5],bool *enabled,int16_t *angle);
+bool tunuino_engine_control_lock(tunuino_engine_control *e,const uint8_t bytes[5]);
+int32_t tunuino_engine_spark_advance(const tunuino_engine_control *e,unsigned cylinder,int32_t adjusted);
 void tunuino_engine_control_init(tunuino_engine_control *e,tunuino_output_write write,void *user);
 void tunuino_engine_control_stop(tunuino_engine_control *e,uint8_t fault);
 bool tunuino_engine_control_configure(tunuino_engine_control *e,const uint8_t bytes[128],
