@@ -8,9 +8,18 @@ bool tunuino_features_decode(const uint8_t p[256],tunuino_feature_config *out){
     tunuino_feature_config c={0};
     if(!p[68]){for(unsigned i=69;i<256;++i)if(p[i])return false;*out=c;return true;}
     if(p[68]!=1||p[69])return false;
-    for(unsigned i=240;i<256;++i)if(p[i])return false;
+    if(p[240]>1||p[241])return false;
+    if(!p[240]){for(unsigned i=241;i<256;++i)if(p[i])return false;}
+    else {
+        c.guard_lambda=u(p+242);c.guard_delay=u(p+244);c.guard_rpm=u(p+246);c.guard_map=u(p+248);
+        c.guard_clt=s(p+250);c.guard_start=u(p+252);c.guard_tps=u(p+254);
+        if(c.guard_lambda<650||c.guard_lambda>2000||c.guard_delay<20||c.guard_delay>5000
+            ||c.guard_rpm<500||c.guard_rpm>12000||c.guard_map<1000||c.guard_map>50000
+            ||c.guard_clt<0||c.guard_clt>12000||c.guard_start>60000||c.guard_tps>10000)return false;
+    }
     c.flags=u(p+70);c.iat_channel=p[72];c.voltage_channel=p[73];c.launch_channel=p[74];c.flex_channel=p[75];
-    if(c.flags>2047||c.iat_channel>4||c.voltage_channel>11||c.launch_channel>11||c.flex_channel>11)return false;
+    if(c.flags>4095||c.iat_channel>4||c.voltage_channel>11||c.launch_channel>11||c.flex_channel>11)return false;
+    if((c.flags&TUNUINO_FEATURE_LAMBDA_GUARD)&&!p[240])return false;
     for(unsigned i=0;i<3;++i){
         c.iat_raw[i]=u(p+76+2*i);c.iat_temperature[i]=s(p+82+2*i);
         c.voltage_axis[i]=u(p+96+2*i);c.deadtime[i]=u(p+102+2*i);c.dwell[i]=u(p+108+2*i);
@@ -122,6 +131,26 @@ bool tunuino_features_update(const tunuino_feature_config *c,tunuino_feature_sta
     if(s->fuel_cut||s->accel_active||launch){s->inhibit=1;s->quiet_elapsed=0;}
     else if(s->inhibit&&sample){s->quiet_elapsed=elapsed(s->quiet_elapsed,dt>100000?100000:dt,(uint32_t)c->transient_delay*1000u);if(s->quiet_elapsed>=(uint32_t)c->transient_delay*1000u)s->inhibit=0;}
     if(s->accel_active&&!s->fuel_cut)s->extra_us=(uint16_t)((uint64_t)c->accel_us*((uint32_t)c->accel_ms*1000u-s->accel_elapsed)/((uint32_t)c->accel_ms*1000u));
+    /* Lean/invalid feedback must persist under load. A trip uses the existing
+     * retained output fault; recovery requires explicit rearming, never a lean
+     * reading clearing itself after fuel is removed. Disabled by default. */
+    if(c->flags&TUNUINO_FEATURE_LAMBDA_GUARD){
+        if(!running){s->guard_running=0;s->guard_run=0;s->guard_wait=0;s->guard_elapsed=0;}
+        else if(sample){
+            uint32_t step=dt>100000?100000:dt;
+            if(!s->guard_running){s->guard_running=1;s->guard_run=0;}
+            else s->guard_run=elapsed(s->guard_run,step,(uint32_t)c->guard_start*1000u);
+            bool eligible=s->guard_run>=(uint32_t)c->guard_start*1000u
+                &&rpm>=(uint32_t)c->guard_rpm*1000u&&map>=(uint32_t)c->guard_map*10u
+                &&cv&&clt>=(int32_t)c->guard_clt*10&&!s->fuel_cut&&!s->accel_active&&!launch&&!s->inhibit;
+            bool unsafe=eligible&&(!in->tps_valid||((in->tps>=c->guard_tps)
+                &&(!in->lambda_valid||in->lambda<500000||in->lambda>2000000||in->lambda>(uint32_t)c->guard_lambda*1000u)));
+            if(!unsafe){s->guard_wait=0;s->guard_elapsed=0;}
+            else if(!s->guard_wait){s->guard_wait=1;s->guard_elapsed=0;}
+            else s->guard_elapsed=elapsed(s->guard_elapsed,step,(uint32_t)c->guard_delay*1000u);
+            if(s->guard_wait&&s->guard_elapsed>=(uint32_t)c->guard_delay*1000u){s->protection=1;return false;}
+        }
+    }else{s->guard_run=s->guard_elapsed=0;s->guard_running=s->guard_wait=0;}
     bool closed=(c->flags&TUNUINO_FEATURE_LAMBDA)&&s->run_delay_done&&running&&cv&&clt>=(int32_t)c->lambda_clt*10
         &&in->tps_valid&&in->tps<=c->lambda_tps&&rpm>=(uint32_t)c->lambda_min_rpm*1000u&&rpm<=(uint32_t)c->lambda_max_rpm*1000u
         &&in->lambda_valid&&in->lambda>=500000&&in->lambda<=2000000&&!s->fuel_cut&&!s->accel_active&&!launch&&!s->inhibit;

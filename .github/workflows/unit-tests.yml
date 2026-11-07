@@ -56,3 +56,14 @@ jobs:
             -Ifirmware/include unit_tests/test_service.c firmware/src/*.c \
             -lm -o build/tests/test_service
           ./build/tests/test_service
+      - name: Compile and execute lambda guard tests
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ifirmware/include unit_tests/test_lambda_guard.c firmware/src/*.c \
+            -lm -o build/tests/test_lambda_guard
+          ./build/tests/test_lambda_guard

@@ -14,8 +14,11 @@
 #define TUNUINO_FEATURE_FLEX 256u
 #define TUNUINO_FEATURE_PROTECTION 512u
 #define TUNUINO_FEATURE_TRIMS 1024u
+#define TUNUINO_FEATURE_LAMBDA_GUARD 2048u
 typedef struct {
     uint16_t flags;
+    uint16_t guard_lambda,guard_delay,guard_rpm,guard_map,guard_start,guard_tps;
+    int16_t guard_clt;
     uint8_t iat_channel,voltage_channel,launch_channel,flex_channel;
     uint16_t iat_raw[3],voltage_raw[2],voltage_value[2],voltage_axis[3],deadtime[3],dwell[3];
     int16_t iat_temperature[3];
@@ -37,6 +40,8 @@ typedef struct {
     uint32_t lambda;
 } tunuino_feature_inputs;
 typedef struct {
+    uint32_t guard_run,guard_elapsed;
+    uint8_t guard_running,guard_wait;
     uint32_t last,run_elapsed,accel_elapsed,dfco_elapsed,quiet_elapsed;
     uint32_t multiplier;
     uint16_t previous_tps,target,extra_us,dead_us,dwell_us;

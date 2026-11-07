@@ -33,6 +33,7 @@ int main(void){
     uint8_t request[32];size_t request_size;
     assert(tunuino_frame_encode((const uint8_t*)"TUNUINO:S\0",10,request,sizeof(request),&request_size)==TUNUINO_FRAME_OK);
     assert(tunuino_dispatch_reply(&context,request,request_size,packet,sizeof(packet),&written)==TUNUINO_DISPATCH_OK);
+    identity.capabilities=95;assert(tunuino_dispatch_validate(&context)==TUNUINO_DISPATCH_OK);
     device.scope_command=NULL;assert(tunuino_dispatch_validate(&context)==TUNUINO_DISPATCH_UNCONFIGURED);
     identity.capabilities=15;assert(tunuino_dispatch_validate(&context)==TUNUINO_DISPATCH_OK);
     puts("scope ordering, ring wrap, frozen chunks, invalidation and read bounds passed");return 0;

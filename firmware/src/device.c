@@ -58,8 +58,8 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
         tunuino_feature_config f;
         if(!tunuino_features_decode(p+TUNUINO_IO_AUX_OFFSET,&f))errors|=TUNUINO_CONFIG_AUX;
         else if(f.flags){
-            if(!have||!p[6]||!p[8]||((f.flags&(TUNUINO_FEATURE_ACCEL|TUNUINO_FEATURE_DFCO|TUNUINO_FEATURE_LAMBDA))&&!c.tps_channel)
-                ||((f.flags&TUNUINO_FEATURE_LAMBDA)&&!p[7])
+            if(!have||!p[6]||!p[8]||((f.flags&(TUNUINO_FEATURE_ACCEL|TUNUINO_FEATURE_DFCO|TUNUINO_FEATURE_LAMBDA|TUNUINO_FEATURE_LAMBDA_GUARD))&&!c.tps_channel)
+                ||((f.flags&(TUNUINO_FEATURE_LAMBDA|TUNUINO_FEATURE_LAMBDA_GUARD))&&!p[7])
                 ||((f.flags&TUNUINO_FEATURE_LIMIT)&&f.limit_cut>=tunuino_device_u16(p+96))
                 ||((f.flags&TUNUINO_FEATURE_IAT)&&f.iat_channel==p[8]))errors|=TUNUINO_CONFIG_AUX;
             if(have&&profile.operation>=3&&(f.flags&TUNUINO_FEATURE_TRIMS)){
