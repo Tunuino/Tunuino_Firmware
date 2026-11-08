@@ -40,7 +40,7 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
     if(tunuino_device_u16(p)!=TUNUINO_IO_SCHEMA || !tunuino_primary_input_validate(p[5],p[9])) errors|=TUNUINO_CONFIG_SCHEMA;
     bool locked=false;int16_t locked_angle=0;
     if(!tunuino_ignition_lock_decode(p+27,&locked,&locked_angle))errors|=TUNUINO_CONFIG_TRIGGER;
-    for(unsigned i=98;i<100;++i) if(p[i]!=0) errors|=TUNUINO_CONFIG_SCHEMA;
+    if(!tunuino_primary_input_validate(p[98],p[99]))errors|=TUNUINO_CONFIG_SCHEMA;
     tunuino_fuel_corrections fueling;
     if(!tunuino_fuel_corrections_decode(p+103,&fueling))errors|=TUNUINO_CONFIG_FUELING;
     bool has_profile=false;

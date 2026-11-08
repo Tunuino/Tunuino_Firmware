@@ -1,9 +1,9 @@
-/* Copyright (c) 2026 Tunuino. Primary conditioned-edge blanking. */
+/* Copyright (c) 2026 Tunuino. Conditioned trigger-edge blanking. */
 #ifndef TUNUINO_PRIMARY_INPUT_H
 #define TUNUINO_PRIMARY_INPUT_H
 #include <stdbool.h>
 #include <stdint.h>
-/* Header byte 5 version, byte 9 level. Legacy 0/0 is no filter.
+/* Primary: header byte 5 version, byte 9 level; CAM: bytes 98/99. Legacy 0/0 is no filter.
  * V1 levels 0/1/2/3 = no blanking / 5 / 10 / 20 us.
  * This does not switch sensor circuitry or measure pulse width. */
 typedef struct {uint32_t last;uint8_t level;bool ready;} tunuino_primary_input;
