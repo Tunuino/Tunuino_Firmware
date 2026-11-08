@@ -12,7 +12,7 @@
 /* Serial protocol discovery version. 001 supports the CRC-wrapped envelope.
  * Independent of the application firmware version and INI revision. */
 #define TUNUINO_IO_TS_SERIAL_VERSION "001"
-#define TUNUINO_IO_CAPABILITIES UINT32_C(255)
+#define TUNUINO_IO_CAPABILITIES UINT32_C(511)
 #define TUNUINO_IO_OUTPUT_SIZE 100u
 /* Native read-only TUNUINO:E response: status, format, valid, reasons,
  * VE centi-percent, ignition centi-degrees (signed), RPM milli, MAP milli,
@@ -41,6 +41,7 @@
 #define TUNUINO_CONFIG_AUTONOMOUS UINT32_C(512)
 #define TUNUINO_CONFIG_FUELING UINT32_C(1024)
 #define TUNUINO_CONFIG_AUX UINT32_C(2048)
+#define TUNUINO_CONFIG_PRESSURE UINT32_C(4096)
 #define TUNUINO_ENGINE_POLICY_OFFSET 102u
 #define TUNUINO_ENGINE_PROFILE_OFFSET 128u
 #define TUNUINO_IO_CONFIG_SIZE 256u
@@ -63,6 +64,8 @@ typedef struct tunuino_device {
     tunuino_live_sample live;
     uint16_t raw[TUNUINO_IO_CHANNELS], tooth;
     uint32_t generation, trigger_errors;
+    uint32_t pressure_generation, pressure_milli_kpa[2];
+    uint8_t pressure_valid_mask;
     bool adc_valid, trigger_valid, dirty, persisted;
     tunuino_device_save save;
     tunuino_device_clock clock;

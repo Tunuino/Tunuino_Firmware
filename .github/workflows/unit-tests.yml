@@ -78,3 +78,14 @@ jobs:
             -Ifirmware/include unit_tests/test_ignition_lock.c firmware/src/*.c \
             -lm -o build/tests/test_ignition_lock
           ./build/tests/test_ignition_lock
+      - name: Compile and execute pressure acquisition tests
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ifirmware/include unit_tests/test_pressure.c firmware/src/*.c \
+            -lm -o build/tests/test_pressure
+          ./build/tests/test_pressure

@@ -2,6 +2,7 @@
 #include "tunuino/device.h"
 #include "tunuino/engine_control.h"
 #include "tunuino/aux_control.h"
+#include "tunuino/pressure.h"
 #include <string.h>
 
 uint16_t tunuino_device_u16(const uint8_t *p) { return (uint16_t)((uint16_t)p[0] << 8 | p[1]); }
@@ -91,7 +92,15 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
         if(i<3) {
             if(raw>4095 || value< -4000 || value>15000 || (i && raw<=tunuino_device_u16(p+30+2*i)))
                 errors|=TUNUINO_CONFIG_COOLANT;
-        } else if(raw!=0 || value!=0) errors|=TUNUINO_CONFIG_COOLANT;
+        } else if(value!=0) errors|=TUNUINO_CONFIG_COOLANT;
+    }
+    if(!tunuino_pressure_validate(p+TUNUINO_PRESSURE_OFFSET))errors|=TUNUINO_CONFIG_PRESSURE;
+    else if(p[TUNUINO_PRESSURE_OFFSET]==1){
+        uint32_t analog=0;const uint8_t *a=length==TUNUINO_IO_SETTINGS_SIZE?p+TUNUINO_IO_AUX_OFFSET:NULL;
+        const uint8_t existing[3]={p[6],p[7],a&&a[0]==1?a[5]:0};
+        for(unsigned i=0;i<3;++i)if(existing[i]>=1&&existing[i]<=11)analog|=UINT32_C(1)<<(existing[i]-1);
+        if(a&&a[68]==1){const unsigned flags=tunuino_device_u16(a+70);for(unsigned i=0;i<3;++i){unsigned channel=a[73+i];if((i==0||(flags&(i==1?128u:256u)))&&channel>=1&&channel<=11)analog|=UINT32_C(1)<<(channel-1);}}
+        for(unsigned i=0;i<2;++i){unsigned channel=p[39+9*i];if(channel){uint32_t bit=UINT32_C(1)<<(channel-1);if(analog&bit)errors|=TUNUINO_CONFIG_PRESSURE;analog|=bit;}}
     }
     if(p[8] && signed16(p+64)==signed16(p+66) && signed16(p+66)==signed16(p+68)) errors|=TUNUINO_CONFIG_COOLANT;
     if(tunuino_device_u16(p+100)<2800 || tunuino_device_u16(p+100)>3600) errors|=TUNUINO_CONFIG_ADC;
@@ -118,6 +127,7 @@ bool tunuino_device_validate(const uint8_t *p, size_t length) {
 }
 
 static bool publish(tunuino_device *d) {
+    d->pressure_generation=0;d->pressure_valid_mask=0;memset(d->pressure_milli_kpa,0,sizeof(d->pressure_milli_kpa));
     memset(&d->cam,0,sizeof(d->cam));d->position_flags=0;d->position_time_us=0;
     if (++d->generation==0) d->generation=1;
     if (!map_decode(&d->scratch,d->active+TUNUINO_IO_CONFIG_SIZE,TUNUINO_MAP_VE)
@@ -188,6 +198,8 @@ void tunuino_device_sample(tunuino_device *d, uint64_t time_ms, const uint16_t r
         const tunuino_analog_curve curve={points,p[26],-40000,150000};
         (void)tunuino_analog_update(&sensors,TUNUINO_ANALOG_COOLANT,&curve,raw[11+p[8]],true,0);
     }
+    d->pressure_generation=d->generation;d->pressure_valid_mask=0;
+    for(unsigned i=0;i<2;++i){d->pressure_milli_kpa[i]=0;if(tunuino_pressure_read(p+TUNUINO_PRESSURE_OFFSET,i,d->raw,d->adc_valid,&d->pressure_milli_kpa[i]))d->pressure_valid_mask|=(uint8_t)(1u<<i);}
     d->live.valid_mask|=sensors.valid_mask;d->live.map_milli_kpa=sensors.map_milli_kpa;
     d->live.lambda_million=sensors.lambda_million;d->live.coolant_milli_c=sensors.coolant_milli_c;
 }
@@ -352,6 +364,14 @@ tunuino_dispatch_status tunuino_device_reply(tunuino_device *d,const tunuino_ide
     else if(length==9 && memcmp(q,"TUNUINO:T",9)==0) {
         engine_timing_preview(d,body);
         size=TUNUINO_ENGINE_TIMING_SIZE;
+    }
+    else if(length==9 && memcmp(q,"TUNUINO:K",9)==0 && (id->capabilities&TUNUINO_DISPATCH_PRESSURE)) {
+        /* Read-only v1: status, version, valid mask, two U32 milli-kPa,
+         * generation. No stale sample is relabelled after a configuration change. */
+        body[1]=1;body[2]=!d->dirty&&d->pressure_generation==d->generation?d->pressure_valid_mask:0;
+        if(body[2]&1)put32(body+3,d->pressure_milli_kpa[0]);
+        if(body[2]&2)put32(body+7,d->pressure_milli_kpa[1]);
+        put32(body+11,d->generation);size=15;
     }
     else if(length==9 && memcmp(q,"TUNUINO:H",9)==0) {
         /* Cam acquisition v1: flags, reserved, phase centidegrees, captured
