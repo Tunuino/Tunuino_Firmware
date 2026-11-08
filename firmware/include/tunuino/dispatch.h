@@ -18,6 +18,7 @@
 #define TUNUINO_DISPATCH_LAMBDA_GUARD UINT32_C(64)
 #define TUNUINO_DISPATCH_IGNITION_LOCK UINT32_C(128)
 #define TUNUINO_DISPATCH_PRESSURE UINT32_C(256)
+#define TUNUINO_DISPATCH_INPUT_FILTER UINT32_C(512)
 struct tunuino_device;
 /* Board-owned snapshots. Serialize dispatch with all updates, including DMA/ISR
  * producers. live_mailbox may transfer acquisition data to a USB-owner local

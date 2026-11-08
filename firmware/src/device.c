@@ -92,8 +92,9 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
         if(i<3) {
             if(raw>4095 || value< -4000 || value>15000 || (i && raw<=tunuino_device_u16(p+30+2*i)))
                 errors|=TUNUINO_CONFIG_COOLANT;
-        } else if(value!=0) errors|=TUNUINO_CONFIG_COOLANT;
+        } /* Remaining value slots contain the versioned AV filter extension. */
     }
+    if(!tunuino_input_filter_validate(p+TUNUINO_INPUT_FILTER_OFFSET))errors|=TUNUINO_CONFIG_INPUT_FILTER;
     if(!tunuino_pressure_validate(p+TUNUINO_PRESSURE_OFFSET))errors|=TUNUINO_CONFIG_PRESSURE;
     else if(p[TUNUINO_PRESSURE_OFFSET]==1){
         uint32_t analog=0;const uint8_t *a=length==TUNUINO_IO_SETTINGS_SIZE?p+TUNUINO_IO_AUX_OFFSET:NULL;
@@ -127,6 +128,7 @@ bool tunuino_device_validate(const uint8_t *p, size_t length) {
 }
 
 static bool publish(tunuino_device *d) {
+    memset(&d->input_filter,0,sizeof(d->input_filter));
     d->pressure_generation=0;d->pressure_valid_mask=0;memset(d->pressure_milli_kpa,0,sizeof(d->pressure_milli_kpa));
     memset(&d->cam,0,sizeof(d->cam));d->position_flags=0;d->position_time_us=0;
     if (++d->generation==0) d->generation=1;
@@ -178,6 +180,8 @@ void tunuino_device_sample(tunuino_device *d, uint64_t time_ms, const uint16_t r
         if(d->adc_valid)memcpy(d->raw,raw,sizeof(d->raw));
     }
     if(!d->adc_valid)memset(d->raw,0,sizeof(d->raw));
+    tunuino_input_filter_apply(&d->input_filter,p+TUNUINO_INPUT_FILTER_OFFSET,time_ms,d->raw,d->adc_valid);
+    raw=d->raw;
     if(rpm_valid && p[2] && rpm_milli <= (uint32_t)tunuino_device_u16(p+96)*1000u) {
         d->live.rpm_milli=rpm_milli;d->live.valid_mask|=TUNUINO_LIVE_RPM_VALID;
     }

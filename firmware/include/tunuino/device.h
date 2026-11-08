@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include "tunuino/dispatch.h"
 #include "tunuino/analog.h"
+#include "tunuino/input_filter.h"
 #include "tunuino/engine_math.h"
 #include "tunuino/position.h"
 
@@ -12,7 +13,7 @@
 /* Serial protocol discovery version. 001 supports the CRC-wrapped envelope.
  * Independent of the application firmware version and INI revision. */
 #define TUNUINO_IO_TS_SERIAL_VERSION "001"
-#define TUNUINO_IO_CAPABILITIES UINT32_C(511)
+#define TUNUINO_IO_CAPABILITIES UINT32_C(1023)
 #define TUNUINO_IO_OUTPUT_SIZE 100u
 /* Native read-only TUNUINO:E response: status, format, valid, reasons,
  * VE centi-percent, ignition centi-degrees (signed), RPM milli, MAP milli,
@@ -42,6 +43,7 @@
 #define TUNUINO_CONFIG_FUELING UINT32_C(1024)
 #define TUNUINO_CONFIG_AUX UINT32_C(2048)
 #define TUNUINO_CONFIG_PRESSURE UINT32_C(4096)
+#define TUNUINO_CONFIG_INPUT_FILTER UINT32_C(8192)
 #define TUNUINO_ENGINE_POLICY_OFFSET 102u
 #define TUNUINO_ENGINE_PROFILE_OFFSET 128u
 #define TUNUINO_IO_CONFIG_SIZE 256u
@@ -66,6 +68,7 @@ typedef struct tunuino_device {
     uint32_t generation, trigger_errors;
     uint32_t pressure_generation, pressure_milli_kpa[2];
     uint8_t pressure_valid_mask;
+    tunuino_input_filter input_filter;
     bool adc_valid, trigger_valid, dirty, persisted;
     tunuino_device_save save;
     tunuino_device_clock clock;

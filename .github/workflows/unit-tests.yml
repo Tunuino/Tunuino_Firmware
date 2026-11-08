@@ -89,3 +89,14 @@ jobs:
             -Ifirmware/include unit_tests/test_pressure.c firmware/src/*.c \
             -lm -o build/tests/test_pressure
           ./build/tests/test_pressure
+      - name: Compile and execute analog input filter tests
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ifirmware/include unit_tests/test_input_filter.c firmware/src/*.c \
+            -lm -o build/tests/test_input_filter
+          ./build/tests/test_input_filter

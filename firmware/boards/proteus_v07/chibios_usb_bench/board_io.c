@@ -189,7 +189,7 @@ void board_io_update(tunuino_device *d){
     if(adc_failed||(ADCD1.state==ADC_ACTIVE&&(uint32_t)(ms-last_adc_start)>10)){
         adcStopConversion(&ADCD1);adc_good=false;
     }
-    if(ADCD1.state==ADC_READY&&(uint32_t)(ms-last_adc_start)>=10){
+    if(ADCD1.state==ADC_READY&&(uint32_t)(ms-last_adc_start)>=2u){
         adc_failed=false;adc_completed=false;last_adc_start=ms;adcStartConversion(&ADCD1,&group,adc_samples,4);
     }
     tunuino_position_reading position={0};tunuino_cam_reading cam={0};uint64_t crank_edge=0;
