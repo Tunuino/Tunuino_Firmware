@@ -35,6 +35,8 @@ static bool trigger_enabled;
 static uint32_t trigger_errors;
 static uint32_t saved_flash_acr;
 static tunuino_primary_input primary_input,cam_input;
+static tunuino_vss_capture vss_capture;static tunuino_vss_tracker vss_tracker;
+static void vss_callback(void *argument){(void)argument;tunuino_vss_edge(&vss_capture,TIM2->CNT);}
 static uint8_t cam_first=1,cam_last=2,cam_phase;
 
 static void adc_error(ADCDriver *driver,adcerror_t error) {(void)driver;(void)error;adc_failed=true;}
@@ -125,10 +127,11 @@ static void edge_callback(void *argument){
 }
 static void configure_capture(tunuino_device *d,uint64_t now){
     tunuino_device_position(d,now,NULL,NULL);
-    palDisablePadEvent(GPIOE,7);palDisablePadEvent(GPIOE,8);
+    palDisablePadEvent(GPIOE,7);palDisablePadEvent(GPIOE,8);palDisablePadEvent(GPIOC,6);
     chSysLock();edge_head=edge_tail=0;edge_overflow=false;
     tunuino_primary_input_reset(&primary_input,d->active[5]==1?d->active[9]:0);
-    tunuino_primary_input_reset(&cam_input,d->active[98]==1?d->active[99]:0);chSysUnlock();
+    tunuino_primary_input_reset(&cam_input,d->active[98]==1?d->active[99]:0);
+    tunuino_vss_reset(&vss_capture,&vss_tracker,d->active[82]==1?d->active[85]:0);chSysUnlock();
     trigger_enabled=d->active[2]!=0;
     const tunuino_position_config config={{d->active[3],d->active[4],30,12000,300000},cam_first,cam_last,cam_phase};
     tunuino_position_config selected=config;selected.crank.maximum_rpm=tunuino_device_u16(d->active+96);
@@ -138,6 +141,7 @@ static void configure_capture(tunuino_device *d,uint64_t now){
         palSetPadCallback(GPIOE,8,edge_callback,(void *)(uintptr_t)1);
         palEnablePadEvent(GPIOE,7,PAL_EVENT_MODE_RISING_EDGE);palEnablePadEvent(GPIOE,8,PAL_EVENT_MODE_RISING_EDGE);
     }
+    if(d->active[82]==1&&d->active[83]==1){palSetPadCallback(GPIOC,6,vss_callback,NULL);palEnablePadEvent(GPIOC,6,d->active[84]?PAL_EVENT_MODE_FALLING_EDGE:PAL_EVENT_MODE_RISING_EDGE);}
     tunuino_scope_reset(&trigger_scope,d->generation);
     capture.processor.scope_observer=tunuino_scope_record;capture.processor.scope_user=&trigger_scope;
     applied_generation=d->generation;
@@ -176,6 +180,8 @@ void board_io_start(tunuino_device *d){
     for(unsigned pin=0;pin<8;++pin)palSetPadMode(GPIOA,pin,PAL_MODE_INPUT_ANALOG);
     for(unsigned pin=0;pin<6;++pin)palSetPadMode(GPIOC,pin,PAL_MODE_INPUT_ANALOG);
     palSetPadMode(GPIOB,0,PAL_MODE_INPUT_ANALOG);palSetPadMode(GPIOB,1,PAL_MODE_INPUT_ANALOG);
+    /* PCB U1501 pad 96, DIGITAL1 via U1202, J101 pin 10. Fixed pullup R1401. */
+    palSetPadMode(GPIOC,6,PAL_MODE_INPUT);
     palSetPadMode(GPIOE,7,PAL_MODE_INPUT);palSetPadMode(GPIOE,8,PAL_MODE_INPUT);
     adcStart(&ADCD1,NULL);
     const tunuino_journal_io io={flash_read,flash_program,flash_erase,NULL};uint8_t saved[TUNUINO_IO_SETTINGS_SIZE];
@@ -221,6 +227,8 @@ void board_io_update(tunuino_device *d){
     tunuino_device_sample(d,now/1000,raw,adc_good&&(uint32_t)(ms-last_adc_good)<100,
         (uint32_t)(position.rpm*1000+0.5),position.crank_valid!=0,position.tooth_index,trigger_errors);
     tunuino_device_position(d,board_io_time_us(),&position,&cam);
+    chSysLock();const tunuino_vss_capture vss_snapshot=vss_capture;const uint64_t vss_now=board_io_time_us();chSysUnlock();
+    d->vss=tunuino_vss_sample(&vss_tracker,&vss_snapshot,d->active+TUNUINO_VSS_OFFSET,vss_now);d->vss_generation=d->generation;
     board_outputs_update(d,&position,(uint32_t)crank_edge,TIM2->CNT);
     tunuino_service_sample(&service,d,now/1000,board_outputs_fault());
     /* Background erase/program must not block an enumerated USB transaction.

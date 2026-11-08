@@ -21,6 +21,7 @@
 #define TUNUINO_DISPATCH_INPUT_FILTER UINT32_C(512)
 #define TUNUINO_DISPATCH_PRIMARY_INPUT UINT32_C(1024)
 #define TUNUINO_DISPATCH_CAM_INPUT UINT32_C(2048)
+#define TUNUINO_DISPATCH_VSS UINT32_C(4096)
 struct tunuino_device;
 /* Board-owned snapshots. Serialize dispatch with all updates, including DMA/ISR
  * producers. live_mailbox may transfer acquisition data to a USB-owner local
