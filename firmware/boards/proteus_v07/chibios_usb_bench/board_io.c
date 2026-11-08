@@ -10,6 +10,7 @@
 #include "tunuino/config_journal.h"
 #include "tunuino/capture_source.h"
 #include "tunuino/trigger_scope.h"
+#include "tunuino/primary_input.h"
 #include <string.h>
 
 static tunuino_config_journal journal;
@@ -33,6 +34,7 @@ static volatile bool edge_overflow;
 static bool trigger_enabled;
 static uint32_t trigger_errors;
 static uint32_t saved_flash_acr;
+static tunuino_primary_input primary_input;
 static uint8_t cam_first=1,cam_last=2,cam_phase;
 
 static void adc_error(ADCDriver *driver,adcerror_t error) {(void)driver;(void)error;adc_failed=true;}
@@ -112,9 +114,11 @@ bool board_io_save(void *user,const uint8_t *bytes,size_t length){
 }
 
 static void edge_callback(void *argument){
+    const uint32_t counter=TIM2->CNT;
+    if(!tunuino_primary_input_accept(&primary_input,counter,(uintptr_t)argument==0))return;
     unsigned head=edge_head;
     if((unsigned)(head-edge_tail)>=64){edge_overflow=true;return;}
-    edges[head%64]=(tunuino_raw_capture){TIM2->CNT,(uintptr_t)argument==0?TUNUINO_CAPTURE_CRANK:TUNUINO_CAPTURE_CAM};
+    edges[head%64]=(tunuino_raw_capture){counter,(uintptr_t)argument==0?TUNUINO_CAPTURE_CRANK:TUNUINO_CAPTURE_CAM};
     /* The main thread drains while holding the system lock. Both pads share
      * EXTI9_5 and therefore have one serialized interrupt producer. */
     __DMB();edge_head=head+1;
@@ -122,7 +126,8 @@ static void edge_callback(void *argument){
 static void configure_capture(tunuino_device *d,uint64_t now){
     tunuino_device_position(d,now,NULL,NULL);
     palDisablePadEvent(GPIOE,7);palDisablePadEvent(GPIOE,8);
-    chSysLock();edge_head=edge_tail=0;edge_overflow=false;chSysUnlock();
+    chSysLock();edge_head=edge_tail=0;edge_overflow=false;
+    tunuino_primary_input_reset(&primary_input,d->active[5]==1?d->active[9]:0);chSysUnlock();
     trigger_enabled=d->active[2]!=0;
     const tunuino_position_config config={{d->active[3],d->active[4],30,12000,300000},cam_first,cam_last,cam_phase};
     tunuino_position_config selected=config;selected.crank.maximum_rpm=tunuino_device_u16(d->active+96);

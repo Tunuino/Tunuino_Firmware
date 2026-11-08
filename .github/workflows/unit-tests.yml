@@ -100,3 +100,14 @@ jobs:
             -Ifirmware/include unit_tests/test_input_filter.c firmware/src/*.c \
             -lm -o build/tests/test_input_filter
           ./build/tests/test_input_filter
+      - name: Compile and execute primary input filter tests
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ifirmware/include unit_tests/test_primary_input.c firmware/src/*.c \
+            -lm -o build/tests/test_primary_input
+          ./build/tests/test_primary_input

@@ -3,6 +3,7 @@
 #include "tunuino/engine_control.h"
 #include "tunuino/aux_control.h"
 #include "tunuino/pressure.h"
+#include "tunuino/primary_input.h"
 #include <string.h>
 
 uint16_t tunuino_device_u16(const uint8_t *p) { return (uint16_t)((uint16_t)p[0] << 8 | p[1]); }
@@ -36,7 +37,7 @@ static bool map_decode(tunuino_map *map, const uint8_t *bytes, tunuino_map_kind 
 uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
     if (p==NULL || (length!=TUNUINO_IO_SETTINGS_SIZE&&length!=TUNUINO_IO_LEGACY_SIZE)) return TUNUINO_CONFIG_SCHEMA;
     uint32_t errors=0;
-    if(tunuino_device_u16(p)!=TUNUINO_IO_SCHEMA || p[5]!=0 || p[9]!=0) errors|=TUNUINO_CONFIG_SCHEMA;
+    if(tunuino_device_u16(p)!=TUNUINO_IO_SCHEMA || !tunuino_primary_input_validate(p[5],p[9])) errors|=TUNUINO_CONFIG_SCHEMA;
     bool locked=false;int16_t locked_angle=0;
     if(!tunuino_ignition_lock_decode(p+27,&locked,&locked_angle))errors|=TUNUINO_CONFIG_TRIGGER;
     for(unsigned i=98;i<100;++i) if(p[i]!=0) errors|=TUNUINO_CONFIG_SCHEMA;
