@@ -95,6 +95,7 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
                 errors|=TUNUINO_CONFIG_COOLANT;
         } /* Remaining value slots contain the versioned AV filter extension. */
     }
+    if(!tunuino_cam2_validate(p+TUNUINO_CAM2_OFFSET))errors|=TUNUINO_CONFIG_SCHEMA;
     if(!tunuino_vss_validate(p+TUNUINO_VSS_OFFSET))errors|=TUNUINO_CONFIG_SCHEMA;
     if(!tunuino_input_filter_validate(p+TUNUINO_INPUT_FILTER_OFFSET))errors|=TUNUINO_CONFIG_INPUT_FILTER;
     if(!tunuino_pressure_validate(p+TUNUINO_PRESSURE_OFFSET))errors|=TUNUINO_CONFIG_PRESSURE;
@@ -130,6 +131,7 @@ bool tunuino_device_validate(const uint8_t *p, size_t length) {
 }
 
 static bool publish(tunuino_device *d) {
+    d->cam2_generation=0;memset(&d->cam2,0,sizeof(d->cam2));
     d->vss_generation=0;memset(&d->vss,0,sizeof(d->vss));
     memset(&d->input_filter,0,sizeof(d->input_filter));
     d->pressure_generation=0;d->pressure_valid_mask=0;memset(d->pressure_milli_kpa,0,sizeof(d->pressure_milli_kpa));
@@ -371,6 +373,12 @@ tunuino_dispatch_status tunuino_device_reply(tunuino_device *d,const tunuino_ide
     else if(length==9 && memcmp(q,"TUNUINO:T",9)==0) {
         engine_timing_preview(d,body);
         size=TUNUINO_ENGINE_TIMING_SIZE;
+    }
+    else if(length==9 && memcmp(q,"TUNUINO:J",9)==0 && (id->capabilities&TUNUINO_DISPATCH_CAM2)) {
+        body[1]=1;const bool current=!d->dirty&&d->cam2_generation==d->generation;
+        body[2]=current?d->cam2.valid:0;body[3]=current?d->cam2.reason:6;
+        if(body[2]){put32(body+4,d->cam2.frequency_milli);put32(body+12,d->cam2.period_us);}
+        if(current){put32(body+16,d->cam2.age_ms);put32(body+24,d->cam2.count);}put32(body+20,d->generation);size=28;
     }
     else if(length==9 && memcmp(q,"TUNUINO:U",9)==0 && (id->capabilities&TUNUINO_DISPATCH_VSS)) {
         body[1]=1;const bool current=!d->dirty&&d->vss_generation==d->generation;

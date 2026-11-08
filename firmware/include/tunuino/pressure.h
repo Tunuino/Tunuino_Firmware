@@ -4,17 +4,16 @@
 #include <stdbool.h>
 #include <stdint.h>
 #define TUNUINO_PRESSURE_OFFSET 38u
-#define TUNUINO_PRESSURE_SIZE 26u
+#define TUNUINO_PRESSURE_SIZE 19u
 static inline uint16_t tunuino_pressure_u16(const uint8_t *p){return (uint16_t)((uint16_t)p[0]<<8|p[1]);}
 /* All-zero v0 remains the original disabled configuration. V1 has two
  * nine-byte records: channel, ADC low/high, pressure low/high in deci-kPa.
- * Last seven bytes are reserved. AV 1..11 only; internal supply is excluded. */
+ * CAM 2 owns the following seven bytes independently. AV 1..11 only. */
 static inline bool tunuino_pressure_validate(const uint8_t *p){
     if(!p)return false;
     bool empty=true;for(unsigned i=0;i<TUNUINO_PRESSURE_SIZE;++i)if(p[i])empty=false;
     if(empty)return true;
     if(p[0]!=1)return false;
-    for(unsigned i=19;i<26;++i)if(p[i])return false;
     for(unsigned i=0;i<2;++i){const uint8_t *r=p+1+9*i;
         if(r[0]>11||tunuino_pressure_u16(r+1)>=tunuino_pressure_u16(r+3)||tunuino_pressure_u16(r+3)>4095
             ||tunuino_pressure_u16(r+5)>=tunuino_pressure_u16(r+7)||tunuino_pressure_u16(r+7)>20000)return false;

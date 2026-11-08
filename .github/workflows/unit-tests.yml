@@ -133,3 +133,14 @@ jobs:
             -Ifirmware/include unit_tests/test_vss.c firmware/src/*.c \
             -lm -o build/tests/test_vss
           ./build/tests/test_vss
+      - name: Compile and execute CAM 2 input tests
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ifirmware/include unit_tests/test_cam2.c firmware/src/*.c \
+            -lm -o build/tests/test_cam2
+          ./build/tests/test_cam2
