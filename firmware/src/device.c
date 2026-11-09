@@ -15,7 +15,7 @@ static int32_t signed16(const uint8_t *p) {
 }
 static size_t page_offset(unsigned page) {
     return page==1 ? 0u : page==2 ? TUNUINO_IO_CONFIG_SIZE
-        : page==3 ? TUNUINO_IO_CONFIG_SIZE+TUNUINO_IO_MAP_SIZE : TUNUINO_IO_AUX_OFFSET;
+        : page==3 ? TUNUINO_IO_CONFIG_SIZE+TUNUINO_IO_MAP_SIZE : page==4?TUNUINO_IO_AUX_OFFSET:TUNUINO_IO_AFR_OFFSET;
 }
 static size_t page_size(unsigned page) {
     return page==1||page==4 ? TUNUINO_IO_CONFIG_SIZE : TUNUINO_IO_MAP_SIZE;
@@ -35,7 +35,7 @@ static bool map_decode(tunuino_map *map, const uint8_t *bytes, tunuino_map_kind 
 }
 
 uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
-    if (p==NULL || (length!=TUNUINO_IO_SETTINGS_SIZE&&length!=TUNUINO_IO_LEGACY_SIZE)) return TUNUINO_CONFIG_SCHEMA;
+    if (p==NULL || (length!=TUNUINO_IO_SETTINGS_SIZE&&length!=TUNUINO_IO_V4_SIZE&&length!=TUNUINO_IO_LEGACY_SIZE)) return TUNUINO_CONFIG_SCHEMA;
     uint32_t errors=0;
     if(tunuino_device_u16(p)!=TUNUINO_IO_SCHEMA || !tunuino_primary_input_validate(p[5],p[9])) errors|=TUNUINO_CONFIG_SCHEMA;
     bool locked=false;int16_t locked_angle=0;
@@ -48,7 +48,7 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
     if(locked&&(!has_profile||!p[2]))errors|=TUNUINO_CONFIG_TRIGGER;
     tunuino_engine_profile profile;
     if(has_profile&&!tunuino_engine_profile_decode(p+128,p[3],p[4],&profile))errors|=TUNUINO_CONFIG_ENGINE;
-    if(length==TUNUINO_IO_SETTINGS_SIZE){
+    if(length>=TUNUINO_IO_V4_SIZE){
         uint32_t used=0;bool have=has_profile&&!(errors&TUNUINO_CONFIG_ENGINE);
         if(have){
             for(unsigned i=0;i<profile.cylinders;++i)used|=UINT32_C(1)<<profile.cylinder[i].injector;
@@ -62,6 +62,7 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
         tunuino_feature_config f;
         if(!tunuino_features_decode(p+TUNUINO_IO_AUX_OFFSET,&f))errors|=TUNUINO_CONFIG_AUX;
         else if(f.flags){
+            if((f.flags&TUNUINO_FEATURE_TARGET_TABLE)&&(length<TUNUINO_IO_SETTINGS_SIZE||tunuino_afr_empty(p+TUNUINO_IO_AFR_OFFSET)))errors|=TUNUINO_CONFIG_AUX;
             if(!have||!p[6]||!p[8]||((f.flags&(TUNUINO_FEATURE_ACCEL|TUNUINO_FEATURE_DFCO|TUNUINO_FEATURE_LAMBDA|TUNUINO_FEATURE_LAMBDA_GUARD))&&!c.tps_channel)
                 ||((f.flags&(TUNUINO_FEATURE_LAMBDA|TUNUINO_FEATURE_LAMBDA_GUARD))&&!p[7])
                 ||((f.flags&TUNUINO_FEATURE_LIMIT)&&f.limit_cut>=tunuino_device_u16(p+96))
@@ -100,7 +101,7 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
     if(!tunuino_input_filter_validate(p+TUNUINO_INPUT_FILTER_OFFSET))errors|=TUNUINO_CONFIG_INPUT_FILTER;
     if(!tunuino_pressure_validate(p+TUNUINO_PRESSURE_OFFSET))errors|=TUNUINO_CONFIG_PRESSURE;
     else if(p[TUNUINO_PRESSURE_OFFSET]==1){
-        uint32_t analog=0;const uint8_t *a=length==TUNUINO_IO_SETTINGS_SIZE?p+TUNUINO_IO_AUX_OFFSET:NULL;
+        uint32_t analog=0;const uint8_t *a=length>=TUNUINO_IO_V4_SIZE?p+TUNUINO_IO_AUX_OFFSET:NULL;
         const uint8_t existing[3]={p[6],p[7],a&&a[0]==1?a[5]:0};
         for(unsigned i=0;i<3;++i)if(existing[i]>=1&&existing[i]<=11)analog|=UINT32_C(1)<<(existing[i]-1);
         if(a&&a[68]==1){const unsigned flags=tunuino_device_u16(a+70);for(unsigned i=0;i<3;++i){unsigned channel=a[73+i];if((i==0||(flags&(i==1?128u:256u)))&&channel>=1&&channel<=11)analog|=UINT32_C(1)<<(channel-1);}}
@@ -123,6 +124,7 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
             if(p[102]&&page==2&&value==0)errors|=TUNUINO_CONFIG_AUTONOMOUS;
         }
     }
+    if(length==TUNUINO_IO_SETTINGS_SIZE&&!tunuino_afr_validate(p+TUNUINO_IO_AFR_OFFSET))errors|=TUNUINO_CONFIG_AUX;
     return errors;
 }
 
@@ -167,7 +169,7 @@ void tunuino_device_init(tunuino_device *d, tunuino_device_save save, tunuino_de
 bool tunuino_device_restore(tunuino_device *d, const uint8_t *bytes, size_t length) {
     if(d==NULL || !tunuino_device_validate(bytes,length))return false;
     memmove(d->active,bytes,length);memcpy(d->staged,d->active,length);d->dirty=false;d->persisted=true;
-    if(length==TUNUINO_IO_LEGACY_SIZE){memset(d->active+length,0,TUNUINO_IO_SETTINGS_SIZE-length);memcpy(d->staged,d->active,sizeof(d->active));}
+    if(length<TUNUINO_IO_SETTINGS_SIZE){memset(d->active+length,0,TUNUINO_IO_SETTINGS_SIZE-length);memcpy(d->staged,d->active,sizeof(d->active));}
     return publish(d);
 }
 
@@ -360,6 +362,14 @@ tunuino_dispatch_status tunuino_device_reply(tunuino_device *d,const tunuino_ide
             size=1+count;
         }
     }
+    else if(length==9 && memcmp(q,"TUNUINO:L",9)==0&&(id->capabilities&TUNUINO_DISPATCH_AFR_TARGET)){
+        uint16_t target=0;bool valid=false;const uint8_t *a=d->active+TUNUINO_IO_AUX_OFFSET;unsigned flags=tunuino_device_u16(a+70);body[1]=1;
+        if(!d->dirty&&a[68]==1&&(flags&TUNUINO_FEATURE_TARGET)&&(d->live.valid_mask&2)){
+            if(flags&TUNUINO_FEATURE_TARGET_TABLE){valid=(d->live.valid_mask&1)&&tunuino_afr_lookup(d->active+TUNUINO_IO_AFR_OFFSET,d->live.rpm_milli,d->live.map_milli_kpa,&target);}
+            else {uint32_t x=d->live.map_milli_kpa/10;unsigned i=x<tunuino_device_u16(a+116)?0u:1u;uint16_t x0=tunuino_device_u16(a+114+2*i),x1=tunuino_device_u16(a+116+2*i),y0=tunuino_device_u16(a+120+2*i),y1=tunuino_device_u16(a+122+2*i);if(x<=tunuino_device_u16(a+114))target=tunuino_device_u16(a+120);else if(x>=tunuino_device_u16(a+118))target=tunuino_device_u16(a+124);else target=(uint16_t)(y0+(int64_t)((int32_t)y1-y0)*(x-x0)/(x1-x0));valid=true;}
+        }
+        body[2]=(uint8_t)((valid?1:0)|((flags&TUNUINO_FEATURE_TARGET_TABLE)?2:0));put16(body+3,target);put32(body+5,d->generation);size=9;
+    }
     else if(length==9 && memcmp(q,"TUNUINO:V",9)==0) {
         /* Read-only staged validation v1; no flash, activation or outputs. */
         body[1]=1;body[2]=d->dirty?1:0;body[3]=d->persisted?1:0;
@@ -423,7 +433,7 @@ tunuino_dispatch_status tunuino_device_reply(tunuino_device *d,const tunuino_ide
         body[1]=2;put16(body+2,100);put16(body+4,64);size=6;
     } else if(length>=3 && (q[0]=='r'||q[0]=='w'||q[0]=='b'||q[0]=='k')) {
         unsigned page=tunuino_device_u16(q+1);
-        if(page<1||page>4)body[0]=0x83;
+        if(page<1||page>5)body[0]=0x83;
         else if((q[0]=='w'||q[0]=='b')&&d->configuration_writable&&!d->configuration_writable())body[0]=0x84;
         else if(q[0]=='b' && length==3) {
             if(!tunuino_device_validate(d->staged,sizeof(d->staged)))body[0]=0x84;

@@ -3,6 +3,7 @@
 #define TUNUINO_DEVICE_H
 #include <stdbool.h>
 #include "tunuino/dispatch.h"
+#include "tunuino/afr_target.h"
 #include "tunuino/analog.h"
 #include "tunuino/input_filter.h"
 #include "tunuino/vss.h"
@@ -15,7 +16,7 @@
 /* Serial protocol discovery version. 001 supports the CRC-wrapped envelope.
  * Independent of the application firmware version and INI revision. */
 #define TUNUINO_IO_TS_SERIAL_VERSION "001"
-#define TUNUINO_IO_CAPABILITIES UINT32_C(16383)
+#define TUNUINO_IO_CAPABILITIES UINT32_C(32767)
 #define TUNUINO_IO_OUTPUT_SIZE 100u
 /* Native read-only TUNUINO:E response: status, format, valid, reasons,
  * VE centi-percent, ignition centi-degrees (signed), RPM milli, MAP milli,
@@ -52,7 +53,9 @@
 #define TUNUINO_IO_MAP_SIZE 576u
 #define TUNUINO_IO_LEGACY_SIZE 1408u
 #define TUNUINO_IO_AUX_OFFSET 1408u
-#define TUNUINO_IO_SETTINGS_SIZE 1664u
+#define TUNUINO_IO_V4_SIZE 1664u
+#define TUNUINO_IO_AFR_OFFSET 1664u
+#define TUNUINO_IO_SETTINGS_SIZE 2240u
 #define TUNUINO_IO_MAP_DIM 16u
 #define TUNUINO_IO_SCHEMA 2u
 #define TUNUINO_IO_CHANNELS 16u

@@ -15,8 +15,10 @@
 #define TUNUINO_FEATURE_PROTECTION 512u
 #define TUNUINO_FEATURE_TRIMS 1024u
 #define TUNUINO_FEATURE_LAMBDA_GUARD 2048u
+#define TUNUINO_FEATURE_TARGET_TABLE 4096u
 typedef struct {
     uint16_t flags;
+    const uint8_t *target_table;
     uint16_t guard_lambda,guard_delay,guard_rpm,guard_map,guard_start,guard_tps;
     int16_t guard_clt;
     uint8_t iat_channel,voltage_channel,launch_channel,flex_channel;

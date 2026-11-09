@@ -1,5 +1,6 @@
 /* Copyright (c) 2026 Tunuino. Fuel corrections precede injector latency. */
 #include "tunuino/engine_features.h"
+#include "tunuino/afr_target.h"
 #include <string.h>
 static uint16_t u(const uint8_t *p){return (uint16_t)((uint16_t)p[0]<<8|p[1]);}
 static int16_t s(const uint8_t *p){uint16_t n=u(p);return (int16_t)(n<32768?(int32_t)n:(int32_t)n-65536);}
@@ -18,7 +19,7 @@ bool tunuino_features_decode(const uint8_t p[256],tunuino_feature_config *out){
             ||c.guard_clt<0||c.guard_clt>12000||c.guard_start>60000||c.guard_tps>10000)return false;
     }
     c.flags=u(p+70);c.iat_channel=p[72];c.voltage_channel=p[73];c.launch_channel=p[74];c.flex_channel=p[75];
-    if(c.flags>4095||c.iat_channel>4||c.voltage_channel>11||c.launch_channel>11||c.flex_channel>11)return false;
+    if(c.flags>8191||c.iat_channel>4||c.voltage_channel>11||c.launch_channel>11||c.flex_channel>11)return false;
     if((c.flags&TUNUINO_FEATURE_LAMBDA_GUARD)&&!p[240])return false;
     for(unsigned i=0;i<3;++i){
         c.iat_raw[i]=u(p+76+2*i);c.iat_temperature[i]=s(p+82+2*i);
@@ -55,6 +56,7 @@ bool tunuino_features_decode(const uint8_t p[256],tunuino_feature_config *out){
     if((c.flags&(TUNUINO_FEATURE_VOLTAGE|TUNUINO_FEATURE_PROTECTION))&&!c.voltage_channel)return false;
     if((c.flags&TUNUINO_FEATURE_LAUNCH)&&(!(c.flags&TUNUINO_FEATURE_LIMIT)||!c.launch_channel))return false;
     if((c.flags&TUNUINO_FEATURE_FLEX)&&!c.flex_channel)return false;
+    if((c.flags&TUNUINO_FEATURE_TARGET_TABLE)&&!(c.flags&TUNUINO_FEATURE_TARGET))return false;
     if((c.flags&TUNUINO_FEATURE_LAMBDA)&&!(c.flags&TUNUINO_FEATURE_TARGET))return false;
     for(unsigned i=0;i<12;++i){c.fuel_trim[i]=s(p+192+2*i);c.spark_trim[i]=s(p+216+2*i);
         if(c.fuel_trim[i]<-2500||c.fuel_trim[i]>2500||c.spark_trim[i]<-1000||c.spark_trim[i]>1000)return false;}
@@ -96,7 +98,7 @@ bool tunuino_features_update(const tunuino_feature_config *c,tunuino_feature_sta
         if(hot>0){int32_t retard=(int32_t)((int64_t)hot*c->iat_retard/1000);s->advance_delta=(int16_t)-(retard>1500?1500:retard);}
     }
     if(c->flags&TUNUINO_FEATURE_VOLTAGE){s->dead_us=curve(c->voltage_axis,c->deadtime,in->voltage);s->dwell_us=curve(c->voltage_axis,c->dwell,in->voltage);}
-    if(c->flags&TUNUINO_FEATURE_TARGET){s->target=curve(c->target_map,c->target_lambda,map/10u);
+    if(c->flags&TUNUINO_FEATURE_TARGET){if(c->flags&TUNUINO_FEATURE_TARGET_TABLE){if(!tunuino_afr_lookup(c->target_table,rpm,map,&s->target))return false;}else s->target=curve(c->target_map,c->target_lambda,map/10u);
         s->multiplier=s->multiplier*1000u/s->target;}
     else s->target=1000;
     if(c->flags&TUNUINO_FEATURE_FLEX){s->multiplier=s->multiplier*(10000u+(uint32_t)(c->flex_fuel-10000u)*in->ethanol/10000u)/10000u;

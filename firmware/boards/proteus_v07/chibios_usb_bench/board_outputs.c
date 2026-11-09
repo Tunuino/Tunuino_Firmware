@@ -147,6 +147,7 @@ void board_outputs_restore(tunuino_device *d,bool boot){
     if(!d->persisted||d->dirty||!tunuino_device_validate(d->active,sizeof(d->active)))return;
     (void)tunuino_aux_decode(d->active+TUNUINO_IO_AUX_OFFSET,0,true,&auxiliary.config);
     (void)tunuino_features_decode(d->active+TUNUINO_IO_AUX_OFFSET,&engine.features);
+    engine.features.target_table=d->active+TUNUINO_IO_AFR_OFFSET;
     chSysLock();
     bool okay=tunuino_engine_control_configure(&engine,d->active+TUNUINO_ENGINE_PROFILE_OFFSET,
         d->active[3],d->active[4],d->generation);
