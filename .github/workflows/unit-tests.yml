@@ -155,3 +155,14 @@ jobs:
             -Ifirmware/include unit_tests/test_afr_target.c firmware/src/*.c \
             -lm -o build/tests/test_afr_target
           ./build/tests/test_afr_target
+      - name: Compile and execute VTEC switching tests
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ifirmware/include unit_tests/test_vtec.c firmware/src/*.c \
+            -lm -o build/tests/test_vtec
+          ./build/tests/test_vtec

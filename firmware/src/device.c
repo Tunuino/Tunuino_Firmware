@@ -4,6 +4,7 @@
 #include "tunuino/aux_control.h"
 #include "tunuino/pressure.h"
 #include "tunuino/primary_input.h"
+#include "tunuino/vtec.h"
 #include <string.h>
 
 uint16_t tunuino_device_u16(const uint8_t *p) { return (uint16_t)((uint16_t)p[0] << 8 | p[1]); }
@@ -15,10 +16,10 @@ static int32_t signed16(const uint8_t *p) {
 }
 static size_t page_offset(unsigned page) {
     return page==1 ? 0u : page==2 ? TUNUINO_IO_CONFIG_SIZE
-        : page==3 ? TUNUINO_IO_CONFIG_SIZE+TUNUINO_IO_MAP_SIZE : page==4?TUNUINO_IO_AUX_OFFSET:TUNUINO_IO_AFR_OFFSET;
+        : page==3 ? TUNUINO_IO_CONFIG_SIZE+TUNUINO_IO_MAP_SIZE : page==4?TUNUINO_IO_AUX_OFFSET:page==5?TUNUINO_IO_AFR_OFFSET:TUNUINO_IO_VTEC_OFFSET;
 }
 static size_t page_size(unsigned page) {
-    return page==1||page==4 ? TUNUINO_IO_CONFIG_SIZE : TUNUINO_IO_MAP_SIZE;
+    return page==1||page==4||page==6 ? TUNUINO_IO_CONFIG_SIZE : TUNUINO_IO_MAP_SIZE;
 }
 /* Only active format: 16x16, axes U16, cells signed S16. */
 static bool map_decode(tunuino_map *map, const uint8_t *bytes, tunuino_map_kind kind) {
@@ -35,7 +36,7 @@ static bool map_decode(tunuino_map *map, const uint8_t *bytes, tunuino_map_kind 
 }
 
 uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
-    if (p==NULL || (length!=TUNUINO_IO_SETTINGS_SIZE&&length!=TUNUINO_IO_V4_SIZE&&length!=TUNUINO_IO_LEGACY_SIZE)) return TUNUINO_CONFIG_SCHEMA;
+    if (p==NULL || (length!=TUNUINO_IO_SETTINGS_SIZE&&length!=TUNUINO_IO_V5_SIZE&&length!=TUNUINO_IO_V4_SIZE&&length!=TUNUINO_IO_LEGACY_SIZE)) return TUNUINO_CONFIG_SCHEMA;
     uint32_t errors=0;
     if(tunuino_device_u16(p)!=TUNUINO_IO_SCHEMA || !tunuino_primary_input_validate(p[5],p[9])) errors|=TUNUINO_CONFIG_SCHEMA;
     bool locked=false;int16_t locked_angle=0;
@@ -62,7 +63,7 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
         tunuino_feature_config f;
         if(!tunuino_features_decode(p+TUNUINO_IO_AUX_OFFSET,&f))errors|=TUNUINO_CONFIG_AUX;
         else if(f.flags){
-            if((f.flags&TUNUINO_FEATURE_TARGET_TABLE)&&(length<TUNUINO_IO_SETTINGS_SIZE||tunuino_afr_empty(p+TUNUINO_IO_AFR_OFFSET)))errors|=TUNUINO_CONFIG_AUX;
+            if((f.flags&TUNUINO_FEATURE_TARGET_TABLE)&&(length<TUNUINO_IO_V5_SIZE||tunuino_afr_empty(p+TUNUINO_IO_AFR_OFFSET)))errors|=TUNUINO_CONFIG_AUX;
             if(!have||!p[6]||!p[8]||((f.flags&(TUNUINO_FEATURE_ACCEL|TUNUINO_FEATURE_DFCO|TUNUINO_FEATURE_LAMBDA|TUNUINO_FEATURE_LAMBDA_GUARD))&&!c.tps_channel)
                 ||((f.flags&(TUNUINO_FEATURE_LAMBDA|TUNUINO_FEATURE_LAMBDA_GUARD))&&!p[7])
                 ||((f.flags&TUNUINO_FEATURE_LIMIT)&&f.limit_cut>=tunuino_device_u16(p+96))
@@ -76,6 +77,24 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
             const uint8_t channels[3]={f.voltage_channel,f.launch_channel,f.flex_channel};
             const uint16_t flags[3]={TUNUINO_FEATURE_VOLTAGE|TUNUINO_FEATURE_PROTECTION,TUNUINO_FEATURE_LAUNCH,TUNUINO_FEATURE_FLEX};
             for(unsigned i=0;i<3;++i)if(f.flags&flags[i]){uint32_t bit=UINT32_C(1)<<(channels[i]-1);if(analog&bit)errors|=TUNUINO_CONFIG_AUX;analog|=bit;}
+        }
+    }
+    if(length==TUNUINO_IO_SETTINGS_SIZE){
+        tunuino_vtec_config c;
+        if(!tunuino_vtec_decode(p+TUNUINO_IO_VTEC_OFFSET,&c))errors|=TUNUINO_CONFIG_VTEC;
+        else if(c.enabled){
+            if(!has_profile||(errors&TUNUINO_CONFIG_ENGINE)||!p[2]||!p[6]||!p[8]
+                ||c.rpm_max>tunuino_device_u16(p+96))errors|=TUNUINO_CONFIG_VTEC;
+            else {
+                uint32_t used=0;for(unsigned i=0;i<profile.cylinders;++i)used|=UINT32_C(1)<<profile.cylinder[i].injector;
+                const uint8_t outputs[3]={profile.pump,profile.fan,profile.relay};for(unsigned i=0;i<3;++i)if(outputs[i])used|=UINT32_C(1)<<(outputs[i]-1);
+                const uint8_t *a=p+TUNUINO_IO_AUX_OFFSET;
+                if(a[0]!=1||!a[5])errors|=TUNUINO_CONFIG_VTEC;
+                if(a[1]&&a[2]>=1&&a[2]<=16)used|=UINT32_C(1)<<(a[2]-1);
+                if(a[3]&&a[4]>=1&&a[4]<=16)used|=UINT32_C(1)<<(a[4]-1);
+                if(used&(UINT32_C(1)<<(c.channel-1)))errors|=TUNUINO_CONFIG_VTEC;
+                if(c.oil_required&&(p[38]!=1||!p[48]))errors|=TUNUINO_CONFIG_VTEC;
+            }
         }
     }
     if(p[102]>1 || (p[102] && (!has_profile||!p[2]||!p[6]||!p[8])))errors|=TUNUINO_CONFIG_AUTONOMOUS;
@@ -124,7 +143,7 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
             if(p[102]&&page==2&&value==0)errors|=TUNUINO_CONFIG_AUTONOMOUS;
         }
     }
-    if(length==TUNUINO_IO_SETTINGS_SIZE&&!tunuino_afr_validate(p+TUNUINO_IO_AFR_OFFSET))errors|=TUNUINO_CONFIG_AUX;
+    if(length>=TUNUINO_IO_V5_SIZE&&!tunuino_afr_validate(p+TUNUINO_IO_AFR_OFFSET))errors|=TUNUINO_CONFIG_AUX;
     return errors;
 }
 
@@ -433,7 +452,7 @@ tunuino_dispatch_status tunuino_device_reply(tunuino_device *d,const tunuino_ide
         body[1]=2;put16(body+2,100);put16(body+4,64);size=6;
     } else if(length>=3 && (q[0]=='r'||q[0]=='w'||q[0]=='b'||q[0]=='k')) {
         unsigned page=tunuino_device_u16(q+1);
-        if(page<1||page>5)body[0]=0x83;
+        if(page<1||page>6||(page==6&&!(id->capabilities&TUNUINO_DISPATCH_VTEC)))body[0]=0x83;
         else if((q[0]=='w'||q[0]=='b')&&d->configuration_writable&&!d->configuration_writable())body[0]=0x84;
         else if(q[0]=='b' && length==3) {
             if(!tunuino_device_validate(d->staged,sizeof(d->staged)))body[0]=0x84;

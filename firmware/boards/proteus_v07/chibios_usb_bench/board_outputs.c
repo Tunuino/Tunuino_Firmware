@@ -9,6 +9,7 @@
 #include "board_outputs.h"
 #include "tunuino/engine_control.h"
 #include "tunuino/aux_control.h"
+#include "tunuino/vtec.h"
 #include <string.h>
 typedef struct {ioportid_t port;unsigned pad;} pin;
 static const pin pins[28]={
@@ -19,6 +20,8 @@ static const pin pins[28]={
 };
 static tunuino_engine_control engine;
 static tunuino_aux_control auxiliary;
+static tunuino_vtec_config vtec_config;
+static tunuino_vtec_state vtec_state;
 static bool timer_ready;
 static uint32_t last_host_seen;
 static bool autonomous,persisted_profile,boot_pending;
@@ -45,12 +48,20 @@ static uint32_t u32(const uint8_t *p){return (uint32_t)tunuino_device_u16(p)<<16
 static void put16(uint8_t *p,uint16_t v){p[0]=(uint8_t)(v>>8);p[1]=(uint8_t)v;}
 static bool arm(uint32_t now,uint32_t generation){
     bool okay=tunuino_engine_control_arm(&engine,now,generation);
-    if(okay)tunuino_aux_reset(&auxiliary);
+    if(okay){tunuino_aux_reset(&auxiliary);memset(&vtec_state,0,sizeof(vtec_state));vtec_state.reason=vtec_config.enabled?TUNUINO_VTEC_STOPPED:TUNUINO_VTEC_DISABLED;}
     return okay;
 }
 static bool command(void *user,const uint8_t *q,size_t length,uint8_t *out,size_t capacity,size_t *written){
     tunuino_device *d=user;bool okay=false;
     if(loaded_generation!=d->generation)board_outputs_restore(d,false);
+    if(length==1&&q[0]==9&&capacity>=24){
+        memset(out,0,24);out[1]=1;out[2]=vtec_config.enabled;out[3]=vtec_state.active;
+        out[4]=vtec_state.reason;out[5]=vtec_state.latched;out[6]=vtec_config.channel;
+        out[7]=(uint8_t)(!d->dirty&&loaded_generation==d->generation);
+        put32(out+8,vtec_state.elapsed/1000u);put32(out+12,d->generation);
+        put32(out+16,d->pressure_milli_kpa[1]);out[20]=(d->pressure_valid_mask&2)?1:0;
+        *written=24;return true;
+    }
     if(length==1&&q[0]==8&&capacity>=40){
         uint16_t tps=0;bool valid=tunuino_aux_tps(&auxiliary.config,d->adc_valid,d->raw,&tps);
         tunuino_feature_inputs in;tunuino_features_sample(&engine.features,d->adc_valid,d->raw,valid,tps,
@@ -86,7 +97,7 @@ static bool command(void *user,const uint8_t *q,size_t length,uint8_t *out,size_
         put32(out+16,engine.generation);put32(out+20,engine.last_injection_us);
         chSysUnlock();*written=24;return true;
     }
-    if(length==129&&q[0]==1&&!d->dirty&&!auxiliary.config.idle_mode&&!auxiliary.config.boost_mode&&!engine.features.flags){
+    if(length==129&&q[0]==1&&!d->dirty&&!auxiliary.config.idle_mode&&!auxiliary.config.boost_mode&&!engine.features.flags&&!vtec_config.enabled){
         chSysLock();okay=tunuino_engine_control_configure(&engine,q+1,d->active[3],d->active[4],d->generation);chSysUnlock();
         if(okay){
             (void)tunuino_fuel_corrections_decode(d->active+103,&engine.fueling);
@@ -133,6 +144,7 @@ void board_outputs_start(tunuino_device *d){
     for(unsigned i=0;i<28;++i){palClearPad(pins[i].port,pins[i].pad);palSetPadMode(pins[i].port,pins[i].pad,PAL_MODE_OUTPUT_PUSHPULL);}
     tunuino_engine_control_init(&engine,write_pin,NULL);
     memset(&auxiliary,0,sizeof(auxiliary));
+    memset(&vtec_config,0,sizeof(vtec_config));memset(&vtec_state,0,sizeof(vtec_state));vtec_state.reason=TUNUINO_VTEC_DISABLED;
     memset(&engine.features,0,sizeof(engine.features));memset(&engine.feature_inputs,0,sizeof(engine.feature_inputs));
     autonomous=persisted_profile=boot_pending=false;loaded_generation=d->generation;
     timer_ready=gptStart(&GPTD5,&timer_config)==MSG_OK;
@@ -142,10 +154,13 @@ void board_outputs_start(tunuino_device *d){
 void board_outputs_restore(tunuino_device *d,bool boot){
     board_outputs_stop();loaded_generation=d->generation;
     memset(&auxiliary,0,sizeof(auxiliary));
+    memset(&vtec_config,0,sizeof(vtec_config));memset(&vtec_state,0,sizeof(vtec_state));vtec_state.reason=TUNUINO_VTEC_DISABLED;
     memset(&engine.features,0,sizeof(engine.features));memset(&engine.feature_inputs,0,sizeof(engine.feature_inputs));
     autonomous=persisted_profile=false;engine.configured=0;engine.ignition_locked=false;engine.locked_angle=0;
     if(!d->persisted||d->dirty||!tunuino_device_validate(d->active,sizeof(d->active)))return;
     (void)tunuino_aux_decode(d->active+TUNUINO_IO_AUX_OFFSET,0,true,&auxiliary.config);
+    (void)tunuino_vtec_decode(d->active+TUNUINO_IO_VTEC_OFFSET,&vtec_config);
+    vtec_state.reason=vtec_config.enabled?TUNUINO_VTEC_DISARMED:TUNUINO_VTEC_DISABLED;
     (void)tunuino_features_decode(d->active+TUNUINO_IO_AUX_OFFSET,&engine.features);
     engine.features.target_table=d->active+TUNUINO_IO_AFR_OFFSET;
     chSysLock();
@@ -163,7 +178,7 @@ bool board_outputs_autonomous(void){return autonomous;}
 void board_outputs_stop(void){
     boot_pending=false;
     chSysLock();tunuino_engine_control_stop(&engine,0);timer_schedule();chSysUnlock();
-    tunuino_aux_reset(&auxiliary);
+    tunuino_aux_reset(&auxiliary);memset(&vtec_state,0,sizeof(vtec_state));vtec_state.reason=vtec_config.enabled?TUNUINO_VTEC_DISARMED:TUNUINO_VTEC_DISABLED;
 }
 bool board_outputs_idle(void){bool idle;chSysLock();idle=!engine.outputs.armed;chSysUnlock();return idle;}
 void board_outputs_update(tunuino_device *d,const tunuino_position_reading *position,uint32_t edge,uint32_t now){
@@ -203,6 +218,13 @@ void board_outputs_update(tunuino_device *d,const tunuino_position_reading *posi
             &&(!c->boost_mode||tunuino_outputs_pwm(&engine.outputs,c->boost_channel-1,now,c->boost_hz,auxiliary.boost_duty));
         if(!okay)tunuino_engine_control_stop(&engine,TUNUINO_OUTPUT_CALIBRATION);
     }
+    tunuino_vtec_update(&vtec_config,&vtec_state,now,engine.outputs.armed!=0,
+        engine.mode==2&&!d->dirty&&d->trigger_valid,d->live.rpm_milli,tps_valid,tps,
+        (d->live.valid_mask&TUNUINO_LIVE_MAP_VALID)!=0,d->live.map_milli_kpa,
+        (d->live.valid_mask&TUNUINO_LIVE_COOLANT_VALID)!=0,d->live.coolant_milli_c,
+        !d->dirty&&d->pressure_generation==d->generation&&(d->pressure_valid_mask&2),d->pressure_milli_kpa[1]);
+    if(vtec_config.enabled&&engine.outputs.armed&&!tunuino_outputs_level(&engine.outputs,vtec_config.channel-1,vtec_state.active!=0))
+        tunuino_engine_control_stop(&engine,TUNUINO_OUTPUT_CALIBRATION);
     timer_schedule();chSysUnlock();
 }
 
