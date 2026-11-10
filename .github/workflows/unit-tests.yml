@@ -166,3 +166,14 @@ jobs:
             -Ifirmware/include unit_tests/test_vtec.c firmware/src/*.c \
             -lm -o build/tests/test_vtec
           ./build/tests/test_vtec
+      - name: Compile and execute VVT feedback and PID tests
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          "$CC" -std=c11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ifirmware/include unit_tests/test_vvt.c firmware/src/*.c \
+            -lm -o build/tests/test_vvt
+          ./build/tests/test_vvt

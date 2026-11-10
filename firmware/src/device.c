@@ -5,6 +5,7 @@
 #include "tunuino/pressure.h"
 #include "tunuino/primary_input.h"
 #include "tunuino/vtec.h"
+#include "tunuino/vvt.h"
 #include <string.h>
 
 uint16_t tunuino_device_u16(const uint8_t *p) { return (uint16_t)((uint16_t)p[0] << 8 | p[1]); }
@@ -94,6 +95,26 @@ uint32_t tunuino_device_validation_errors(const uint8_t *p, size_t length) {
                 if(a[3]&&a[4]>=1&&a[4]<=16)used|=UINT32_C(1)<<(a[4]-1);
                 if(used&(UINT32_C(1)<<(c.channel-1)))errors|=TUNUINO_CONFIG_VTEC;
                 if(c.oil_required&&(p[38]!=1||!p[48]))errors|=TUNUINO_CONFIG_VTEC;
+            }
+        }
+    }
+    if(length==TUNUINO_IO_SETTINGS_SIZE){
+        tunuino_vvt_config c;
+        if(!tunuino_vvt_decode(p+TUNUINO_IO_VTEC_OFFSET,&c))errors|=TUNUINO_CONFIG_VVT;
+        else if(c.enabled){
+            if(!has_profile||(errors&TUNUINO_CONFIG_ENGINE)||!p[2]||!p[8]||c.rpm_min>tunuino_device_u16(p+96))errors|=TUNUINO_CONFIG_VVT;
+            else {
+                const uint8_t source[7]={p[3],p[4],profile.cam_first,profile.cam_last,profile.cam_phase,p[5]==1?p[9]:0,p[98]==1?p[99]:0};
+                if(memcmp(c.source,source,7))errors|=TUNUINO_CONFIG_VVT;
+                if(!tunuino_vvt_window(&c,p[3],p[4],profile.cam_first,profile.cam_last,profile.cam_phase))errors|=TUNUINO_CONFIG_VVT;
+                uint32_t used=0;for(unsigned i=0;i<profile.cylinders;++i)used|=UINT32_C(1)<<profile.cylinder[i].injector;
+                const uint8_t outputs[3]={profile.pump,profile.fan,profile.relay};for(unsigned i=0;i<3;++i)if(outputs[i])used|=UINT32_C(1)<<(outputs[i]-1);
+                const uint8_t *a=p+TUNUINO_IO_AUX_OFFSET,*v=p+TUNUINO_IO_VTEC_OFFSET;
+                if(a[1]&&a[2]>=1&&a[2]<=16)used|=UINT32_C(1)<<(a[2]-1);
+                if(a[3]&&a[4]>=1&&a[4]<=16)used|=UINT32_C(1)<<(a[4]-1);
+                if(v[1]&&v[2]>=1&&v[2]<=16)used|=UINT32_C(1)<<(v[2]-1);
+                if(used&(UINT32_C(1)<<(c.channel-1)))errors|=TUNUINO_CONFIG_VVT;
+                if(c.oil_required&&(p[38]!=1||!p[48]))errors|=TUNUINO_CONFIG_VVT;
             }
         }
     }
@@ -453,6 +474,7 @@ tunuino_dispatch_status tunuino_device_reply(tunuino_device *d,const tunuino_ide
     } else if(length>=3 && (q[0]=='r'||q[0]=='w'||q[0]=='b'||q[0]=='k')) {
         unsigned page=tunuino_device_u16(q+1);
         if(page<1||page>6||(page==6&&!(id->capabilities&TUNUINO_DISPATCH_VTEC)))body[0]=0x83;
+        else if(q[0]=='w'&&page==6&&length>=8&&tunuino_device_u16(q+3)==0&&q[7]==2&&!(id->capabilities&TUNUINO_DISPATCH_VVT))body[0]=0x83;
         else if((q[0]=='w'||q[0]=='b')&&d->configuration_writable&&!d->configuration_writable())body[0]=0x84;
         else if(q[0]=='b' && length==3) {
             if(!tunuino_device_validate(d->staged,sizeof(d->staged)))body[0]=0x84;
