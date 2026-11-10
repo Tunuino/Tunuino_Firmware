@@ -26,6 +26,7 @@
 #define TUNUINO_DISPATCH_AFR_TARGET UINT32_C(16384)
 #define TUNUINO_DISPATCH_VTEC UINT32_C(32768)
 #define TUNUINO_DISPATCH_VVT UINT32_C(65536)
+#define TUNUINO_DISPATCH_VVT_TARGET UINT32_C(131072)
 struct tunuino_device;
 /* Board-owned snapshots. Serialize dispatch with all updates, including DMA/ISR
  * producers. live_mailbox may transfer acquisition data to a USB-owner local

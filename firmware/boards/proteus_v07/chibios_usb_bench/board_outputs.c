@@ -11,6 +11,7 @@
 #include "tunuino/aux_control.h"
 #include "tunuino/vtec.h"
 #include "tunuino/vvt.h"
+#include "tunuino/vvt_target.h"
 #include <string.h>
 typedef struct {ioportid_t port;unsigned pad;} pin;
 static const pin pins[28]={
@@ -25,6 +26,7 @@ static tunuino_vtec_config vtec_config;
 static tunuino_vtec_state vtec_state;
 static tunuino_vvt_config vvt_config;
 static tunuino_vvt_state vvt_state;
+static bool vvt_target_valid;
 static bool timer_ready;
 static uint32_t last_host_seen;
 static bool autonomous,persisted_profile,boot_pending;
@@ -58,11 +60,11 @@ static bool command(void *user,const uint8_t *q,size_t length,uint8_t *out,size_
     tunuino_device *d=user;bool okay=false;
     if(loaded_generation!=d->generation)board_outputs_restore(d,false);
     if(length==1&&q[0]==10&&capacity>=40){
-        memset(out,0,40);out[1]=1;out[2]=vvt_config.enabled;out[3]=vvt_state.active;
+        memset(out,0,40);out[1]=vvt_config.table_mode?2:1;out[2]=vvt_config.enabled;out[3]=vvt_state.active;
         out[4]=vvt_state.reason;out[5]=vvt_state.latched;out[6]=vvt_config.channel;
         out[7]=(uint8_t)(!d->dirty&&loaded_generation==d->generation);
         put32(out+8,d->generation);put16(out+12,(uint16_t)vvt_config.target);
-        bool feedback=d->active[TUNUINO_IO_VTEC_OFFSET]==2&&d->active[TUNUINO_IO_VTEC_OFFSET+64]==1
+        bool feedback=d->active[TUNUINO_IO_VTEC_OFFSET]==2&&d->active[TUNUINO_IO_VTEC_OFFSET+64]>=1
             &&!d->dirty&&(d->position_flags&7)==7&&d->position_time_us>=d->cam.time_us
             &&d->position_time_us-d->cam.time_us<=(uint64_t)vvt_config.max_age_ms*1000u;
         int32_t measured=(int32_t)vvt_config.reference-(int32_t)d->cam.angle_centi;
@@ -70,7 +72,7 @@ static bool command(void *user,const uint8_t *q,size_t length,uint8_t *out,size_
         if(measured< -36000)measured+=72000;
         feedback=feedback&&measured>=INT16_MIN&&measured<=INT16_MAX;
         if(feedback)put16(out+14,(uint16_t)(int16_t)measured);
-        put16(out+16,vvt_state.duty);out[18]=feedback;
+        put16(out+16,vvt_state.duty);out[18]=feedback;out[19]=vvt_config.table_mode?(vvt_config.target_invalid?2:1):0;
         put32(out+20,vvt_state.elapsed/1000u);put32(out+24,vvt_state.tracking/1000u);
         if((d->position_flags&7)==7&&d->position_time_us>=d->cam.time_us){uint64_t age=d->position_time_us-d->cam.time_us;put32(out+28,age>UINT32_MAX?UINT32_MAX:(uint32_t)age);}
         put32(out+32,d->pressure_milli_kpa[1]);out[36]=(d->pressure_valid_mask&2)?1:0;
@@ -185,6 +187,8 @@ void board_outputs_restore(tunuino_device *d,bool boot){
     (void)tunuino_aux_decode(d->active+TUNUINO_IO_AUX_OFFSET,0,true,&auxiliary.config);
     (void)tunuino_vtec_decode(d->active+TUNUINO_IO_VTEC_OFFSET,&vtec_config);
     (void)tunuino_vvt_decode(d->active+TUNUINO_IO_VTEC_OFFSET,&vvt_config);
+    vvt_target_valid=tunuino_vvt_target_limits(d->active+TUNUINO_IO_VVT_TARGET_OFFSET,vvt_config.minimum,vvt_config.maximum);
+    vvt_config.target_invalid=vvt_config.table_mode;
     vvt_state.reason=vvt_config.enabled?TUNUINO_VVT_DISARMED:TUNUINO_VVT_DISABLED;
     vtec_state.reason=vtec_config.enabled?TUNUINO_VTEC_DISARMED:TUNUINO_VTEC_DISABLED;
     (void)tunuino_features_decode(d->active+TUNUINO_IO_AUX_OFFSET,&engine.features);
@@ -252,6 +256,8 @@ void board_outputs_update(tunuino_device *d,const tunuino_position_reading *posi
         !d->dirty&&d->pressure_generation==d->generation&&(d->pressure_valid_mask&2),d->pressure_milli_kpa[1]);
     if(vtec_config.enabled&&engine.outputs.armed&&!tunuino_outputs_level(&engine.outputs,vtec_config.channel-1,vtec_state.active!=0))
         tunuino_engine_control_stop(&engine,TUNUINO_OUTPUT_CALIBRATION);
+    tunuino_vvt_resolve_target(&vvt_config,d->active+TUNUINO_IO_VVT_TARGET_OFFSET,vvt_target_valid,
+        !d->dirty&&(d->live.valid_mask&TUNUINO_LIVE_MAP_VALID),d->live.rpm_milli,d->live.map_milli_kpa);
     tunuino_vvt_update(&vvt_config,&vvt_state,now,engine.outputs.armed!=0,
         engine.mode==2&&!d->dirty&&d->trigger_valid,d->live.rpm_milli,
         (d->live.valid_mask&TUNUINO_LIVE_COOLANT_VALID)!=0,d->live.coolant_milli_c,

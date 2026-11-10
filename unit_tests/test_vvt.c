@@ -1,4 +1,5 @@
 #include "tunuino/vvt.h"
+#include "tunuino/vvt_target.h"
 #include "tunuino/vtec.h"
 #include "tunuino/device.h"
 #include "tunuino/outputs.h"
@@ -56,5 +57,33 @@ int main(void){
     }
     tunuino_cam_reading missing;tunuino_position_cam_read(&position,323000,&missing);assert(!missing.valid);
     tunuino_vvt_update(&config,&state,323000,true,true,1666667,true,80000,true,250000,false,323000,0,0);assert(!state.active&&state.latched);
-    puts("VVT PID units, inverse direction, duplicate feedback, limits, stale/source faults, latches, timer wrap, PWM/watchdog and disabled legacy configuration passed (host simulation)");return 0;
+    // Signed bilinear RPM/MAP targets, including negative travel and clamped edges.
+    uint8_t table[576]={0};assert(tunuino_vvt_target_empty(table));int16_t target;
+    assert(!tunuino_vvt_target_lookup(table,0,0,&target));
+    for(unsigned i=0;i<16;++i){put(table,2*i,500+500*i);put(table,32+2*i,2000+1000*i);}
+    for(unsigned r=0;r<16;++r)for(unsigned c=0;c<16;++c)put(table,64+2*(r*16+c),(unsigned)(int16_t)(-3000+200*(int)r+200*(int)c));
+    assert(tunuino_vvt_target_validate(table)&&tunuino_vvt_target_limits(table,-3000,3000));
+    assert(!tunuino_vvt_target_limits(table,0,3000));
+    assert(tunuino_vvt_target_lookup(table,750000,25000,&target)&&target==-2800);
+    assert(tunuino_vvt_target_lookup(table,8000000,170000,&target)&&target==3000);
+    assert(tunuino_vvt_target_lookup(table,0,0,&target)&&target==-3000);
+    assert(tunuino_vvt_target_lookup(table,UINT32_MAX,UINT32_MAX,&target)&&target==3000);
+    put(table,2,500);assert(!tunuino_vvt_target_validate(table));put(table,2,1000);
+    defaults(p);p[64]=2;p[123]=1;assert(tunuino_vvt_decode(p,&config)&&config.table_mode);p[64]=1;assert(!tunuino_vvt_decode(p,&config));p[64]=2;
+    assert(tunuino_vvt_decode(p,&config));config.delay_ms=0;
+    for(unsigned i=0;i<256;++i)put(table,64+2*i,2000);
+    tunuino_vvt_resolve_target(&config,table,true,true,2000000,100000);assert(!config.target_invalid&&config.target==2000);
+    reset();tick(0,9000,true);assert(state.active&&state.duty==6000);
+    for(unsigned i=0;i<256;++i)put(table,64+2*i,1000);
+    tunuino_vvt_resolve_target(&config,table,true,true,2000000,100000);tick(50000,9000,true);assert(state.active&&state.duty==5000);
+    tunuino_vvt_resolve_target(&config,table,true,false,2000000,100000);tick(1000,9000,true);assert(!state.active&&state.latched&&state.reason==TUNUINO_VVT_TARGET&&state.duty==0);
+    tunuino_vvt_resolve_target(&config,table,true,true,2000000,100000);tick(1000,9000,true);assert(!state.active&&state.reason==TUNUINO_VVT_LATCHED);
+    tunuino_vvt_resolve_target(&config,table,false,true,2000000,100000);assert(config.target_invalid);
+    memcpy(all,d.active,sizeof(all));memcpy(all+TUNUINO_IO_VTEC_OFFSET,p,256);all[TUNUINO_IO_VTEC_OFFSET+65]=0;
+    memcpy(all+TUNUINO_IO_VVT_TARGET_OFFSET,table,576);assert(tunuino_device_validation_errors(all,sizeof(all))&TUNUINO_CONFIG_VVT); // MAP is not configured.
+    all[6]=1;put(all,16,25000);assert(tunuino_device_validate(all,sizeof(all)));
+    put(all,TUNUINO_IO_VVT_TARGET_OFFSET+64,5000);assert(tunuino_device_validation_errors(all,sizeof(all))&TUNUINO_CONFIG_VVT);
+    assert(!tunuino_device_validate(all,TUNUINO_IO_V7_SIZE));
+    defaults(p);p[65]=0;memcpy(all,d.active,sizeof(all));memcpy(all+TUNUINO_IO_VTEC_OFFSET,p,256);assert(tunuino_device_restore(&d,all,TUNUINO_IO_V7_SIZE));assert(tunuino_vvt_target_empty(d.active+TUNUINO_IO_VVT_TARGET_OFFSET));assert(memcmp(d.active+TUNUINO_IO_VTEC_OFFSET,p,256)==0);
+    puts("VVT RPM/MAP signed interpolation, travel validation, target source failure and legacy migration; VVT PID units, inverse direction, duplicate feedback, limits, stale/source faults, latches, timer wrap, PWM/watchdog and disabled legacy configuration passed (host simulation)");return 0;
 }

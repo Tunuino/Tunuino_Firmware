@@ -1,5 +1,6 @@
-/* Copyright (c) 2026 Tunuino. Fixed-target VVT commissioning controller. */
+/* Copyright (c) 2026 Tunuino. CAM 1 VVT controller with independently resolved target. */
 #include "tunuino/vvt.h"
+#include "tunuino/vvt_target.h"
 #include <string.h>
 static uint16_t u(const uint8_t *p){return (uint16_t)((uint16_t)p[0]<<8|p[1]);}
 static int16_t s16(const uint8_t *p){uint16_t v=u(p);return (int16_t)(v<32768?(int32_t)v:(int32_t)v-65536);}
@@ -7,8 +8,10 @@ bool tunuino_vvt_decode(const uint8_t p[256],tunuino_vvt_config *out){
     if(!p||!out||p[0]>2)return false;
     tunuino_vvt_config c={0};
     if(p[0]<2||!p[64]){for(unsigned i=64;i<256;++i)if(p[i])return false;*out=c;return true;}
-    if(p[0]!=2||p[64]!=1||p[65]>1||p[66]>16||p[67]>1||p[110]>1||p[111])return false;
-    for(unsigned i=123;i<256;++i)if(p[i])return false;
+    if(p[0]!=2||(p[64]!=1&&p[64]!=2)||p[65]>1||p[66]>16||p[67]>1||p[110]>1||p[111])return false;
+    if((p[64]==1&&p[123])||p[123]>1)return false;
+    c.table_mode=p[123];
+    for(unsigned i=124;i<256;++i)if(p[i])return false;
     memcpy(c.source,p+116,7);
     if(c.source[0]){if(c.source[0]<4||c.source[0]>120||!c.source[1]||c.source[1]>=c.source[0]/2||c.source[2]>c.source[3]||c.source[3]>=c.source[0]-c.source[1]||c.source[4]>1||c.source[5]>3||c.source[6]>3)return false;}
     else for(unsigned i=1;i<7;++i)if(c.source[i])return false;
@@ -31,6 +34,10 @@ bool tunuino_vvt_window(const tunuino_vvt_config *c,uint16_t slots,uint16_t miss
     int64_t high=(int64_t)phase*36000+(int64_t)(last+1u+(last==slots-missing-1u?missing:0u))*36000/slots-1;
     return (int64_t)c->reference-c->maximum>=low&&(int64_t)c->reference-c->minimum<=high;
 }
+void tunuino_vvt_resolve_target(tunuino_vvt_config *c,const uint8_t table[576],bool table_valid,bool map_valid,uint32_t rpm,uint32_t map){
+    if(!c)return;
+    c->target_invalid=c->table_mode&&(!table_valid||!map_valid||!tunuino_vvt_target_lookup(table,rpm,map,&c->target));
+}
 static void inhibit(tunuino_vvt_state *s,uint8_t reason,bool fault){
     s->active=0;s->duty=0;s->integral=0;s->edge=0;s->tracking=0;s->reason=reason;
     if(fault)s->latched=1;
@@ -49,6 +56,7 @@ void tunuino_vvt_update(const tunuino_vvt_config *c,tunuino_vvt_state *s,uint32_
     if(rpm<(uint32_t)(active?c->rpm_min-c->rpm_hysteresis:c->rpm_min)*1000u){inhibit(s,TUNUINO_VVT_RPM,false);return;}
     if(clt<(int32_t)(active?c->clt_min-c->clt_hysteresis:c->clt_min)*10){inhibit(s,TUNUINO_VVT_TEMPERATURE,false);return;}
     if(s->elapsed<delay){inhibit(s,TUNUINO_VVT_DELAY,false);return;}
+    if(c->target_invalid){inhibit(s,TUNUINO_VVT_TARGET,active);return;}
     if(!cam_valid||raw>=72000||snapshot<edge||snapshot-edge>(uint64_t)c->max_age_ms*1000u){inhibit(s,TUNUINO_VVT_FEEDBACK,active);return;}
     int32_t angle=(int32_t)c->reference-(int32_t)raw;
     if(angle>36000)angle-=72000;
