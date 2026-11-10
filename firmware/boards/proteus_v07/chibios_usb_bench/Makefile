@@ -7,7 +7,7 @@ CONFDIR := ./cfg
 BUILDDIR ?= ./build
 DEPDIR := $(BUILDDIR)/.dep
 USE_OPT = -Os -g3 -ffunction-sections -fdata-sections -fno-common
-USE_COPT = -std=c11
+USE_COPT = -std=c11 -fstack-usage
 USE_CPPOPT =
 USE_LINK_GC = yes
 USE_LTO = no

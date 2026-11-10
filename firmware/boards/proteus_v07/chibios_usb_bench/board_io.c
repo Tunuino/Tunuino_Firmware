@@ -14,6 +14,10 @@
 #include <string.h>
 
 static tunuino_config_journal journal;
+/* Startup is serialized in main(), before USB or acquisition updates. Keep
+ * the restore buffer out of its 8 KiB stack: journal scanning also needs a
+ * complete flash record plus nested calibration validation on that stack. */
+static uint8_t startup_settings[TUNUINO_IO_SETTINGS_SIZE];
 static tunuino_service_data service;
 static tunuino_device *service_device;
 static uint64_t stopped_since,last_checkpoint;
@@ -190,8 +194,9 @@ void board_io_start(tunuino_device *d){
     palSetPadMode(GPIOE,11,PAL_MODE_INPUT);
     palSetPadMode(GPIOE,7,PAL_MODE_INPUT);palSetPadMode(GPIOE,8,PAL_MODE_INPUT);
     adcStart(&ADCD1,NULL);
-    const tunuino_journal_io io={flash_read,flash_program,flash_erase,NULL};uint8_t saved[TUNUINO_IO_SETTINGS_SIZE];
-    if(tunuino_journal_init(&journal,&io,saved)&&journal.calibration_persisted)(void)tunuino_device_restore(d,saved,sizeof(saved));
+    const tunuino_journal_io io={flash_read,flash_program,flash_erase,NULL};
+    if(tunuino_journal_init(&journal,&io,startup_settings)&&journal.calibration_persisted)
+        (void)tunuino_device_restore(d,startup_settings,sizeof(startup_settings));
     tunuino_service_init(&service,journal.service);service.uncertain=!journal.healthy;
     service_device=d;d->service_command=service_command;d->service_user=d;
     board_outputs_restore(d,true);

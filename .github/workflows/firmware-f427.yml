@@ -86,6 +86,8 @@ jobs:
           make --no-print-directory -C firmware/boards/proteus_v07/chibios_usb_bench \
             CHIBIOS="$GITHUB_WORKSPACE/.deps/chibios" \
             BUILDDIR="$GITHUB_WORKSPACE/build/f427" -j2
+      - name: Check startup stack budget before USB enumeration
+        run: python3 tools/check_startup_stack.py build/f427 firmware/boards/proteus_v07/chibios_usb_bench/Makefile
       - name: Check generated ARM image
         shell: bash
         run: |
@@ -115,5 +117,6 @@ jobs:
             build/f427/*.bin
             build/f427/*.hex
             build/f427/*.map
+            build/f427/obj/*.su
           if-no-files-found: error
           retention-days: 14
