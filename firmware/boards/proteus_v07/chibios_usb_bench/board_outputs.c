@@ -187,7 +187,7 @@ void board_outputs_restore(tunuino_device *d,bool boot){
     (void)tunuino_aux_decode(d->active+TUNUINO_IO_AUX_OFFSET,0,true,&auxiliary.config);
     (void)tunuino_vtec_decode(d->active+TUNUINO_IO_VTEC_OFFSET,&vtec_config);
     (void)tunuino_vvt_decode(d->active+TUNUINO_IO_VTEC_OFFSET,&vvt_config);
-    vvt_target_valid=tunuino_vvt_target_limits(d->active+TUNUINO_IO_VVT_TARGET_OFFSET,vvt_config.minimum,vvt_config.maximum);
+    vvt_target_valid=tunuino_vvt_target_limits(d->active+(vvt_config.table_mode==2?TUNUINO_IO_VVT_TARGET2_OFFSET:TUNUINO_IO_VVT_TARGET_OFFSET),vvt_config.minimum,vvt_config.maximum);
     vvt_config.target_invalid=vvt_config.table_mode;
     vvt_state.reason=vvt_config.enabled?TUNUINO_VVT_DISARMED:TUNUINO_VVT_DISABLED;
     vtec_state.reason=vtec_config.enabled?TUNUINO_VTEC_DISARMED:TUNUINO_VTEC_DISABLED;
@@ -256,7 +256,7 @@ void board_outputs_update(tunuino_device *d,const tunuino_position_reading *posi
         !d->dirty&&d->pressure_generation==d->generation&&(d->pressure_valid_mask&2),d->pressure_milli_kpa[1]);
     if(vtec_config.enabled&&engine.outputs.armed&&!tunuino_outputs_level(&engine.outputs,vtec_config.channel-1,vtec_state.active!=0))
         tunuino_engine_control_stop(&engine,TUNUINO_OUTPUT_CALIBRATION);
-    tunuino_vvt_resolve_target(&vvt_config,d->active+TUNUINO_IO_VVT_TARGET_OFFSET,vvt_target_valid,
+    tunuino_vvt_resolve_target(&vvt_config,d->active+(vvt_config.table_mode==2?TUNUINO_IO_VVT_TARGET2_OFFSET:TUNUINO_IO_VVT_TARGET_OFFSET),vvt_target_valid,
         !d->dirty&&(d->live.valid_mask&TUNUINO_LIVE_MAP_VALID),d->live.rpm_milli,d->live.map_milli_kpa);
     tunuino_vvt_update(&vvt_config,&vvt_state,now,engine.outputs.armed!=0,
         engine.mode==2&&!d->dirty&&d->trigger_valid,d->live.rpm_milli,
@@ -264,7 +264,7 @@ void board_outputs_update(tunuino_device *d,const tunuino_position_reading *posi
         !d->dirty&&d->pressure_generation==d->generation&&(d->pressure_valid_mask&2),d->pressure_milli_kpa[1],
         !d->dirty&&(d->position_flags&7)==7,d->position_time_us,d->cam.time_us,d->cam.angle_centi);
     if(vvt_config.enabled&&engine.outputs.armed&&(engine.mode==1||engine.mode==2)
-        &&!tunuino_outputs_pwm(&engine.outputs,vvt_config.channel-1,now,vvt_config.hz,vvt_state.duty))
+        &&!tunuino_outputs_pwm(&engine.outputs,vvt_config.channel-1,now,vvt_config.hz,tunuino_vvt_pwm_duty(&vvt_config,&vvt_state)))
         tunuino_engine_control_stop(&engine,TUNUINO_OUTPUT_CALIBRATION);
     timer_schedule();chSysUnlock();
 }

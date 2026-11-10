@@ -16,7 +16,7 @@
 /* Serial protocol discovery version. 001 supports the CRC-wrapped envelope.
  * Independent of the application firmware version and INI revision. */
 #define TUNUINO_IO_TS_SERIAL_VERSION "001"
-#define TUNUINO_IO_CAPABILITIES UINT32_C(262143)
+#define TUNUINO_IO_CAPABILITIES UINT32_C(524287)
 #define TUNUINO_IO_OUTPUT_SIZE 100u
 /* Native read-only TUNUINO:E response: status, format, valid, reasons,
  * VE centi-percent, ignition centi-degrees (signed), RPM milli, MAP milli,
@@ -61,7 +61,9 @@
 #define TUNUINO_IO_VTEC_OFFSET 2240u
 #define TUNUINO_IO_V7_SIZE 2496u
 #define TUNUINO_IO_VVT_TARGET_OFFSET 2496u
-#define TUNUINO_IO_SETTINGS_SIZE 3072u
+#define TUNUINO_IO_V8_SIZE 3072u
+#define TUNUINO_IO_VVT_TARGET2_OFFSET 3072u
+#define TUNUINO_IO_SETTINGS_SIZE 3648u
 #define TUNUINO_IO_MAP_DIM 16u
 #define TUNUINO_IO_SCHEMA 2u
 #define TUNUINO_IO_CHANNELS 16u

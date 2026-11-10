@@ -8,10 +8,17 @@ bool tunuino_vvt_decode(const uint8_t p[256],tunuino_vvt_config *out){
     if(!p||!out||p[0]>2)return false;
     tunuino_vvt_config c={0};
     if(p[0]<2||!p[64]){for(unsigned i=64;i<256;++i)if(p[i])return false;*out=c;return true;}
-    if(p[0]!=2||(p[64]!=1&&p[64]!=2)||p[65]>1||p[66]>16||p[67]>1||p[110]>1||p[111])return false;
-    if((p[64]==1&&p[123])||p[123]>1)return false;
+    if(p[0]!=2||(p[64]<1||p[64]>3)||p[65]>1||p[66]>16||p[67]>1||p[110]>1||p[111])return false;
+    if((p[64]==1&&p[123])||p[123]>(p[64]==3?2:1))return false;
     c.table_mode=p[123];
-    for(unsigned i=124;i<256;++i)if(p[i])return false;
+    c.advanced=p[64]==3;c.i_min=-10000;c.i_max=10000;c.output_min=-10000;c.output_max=10000;
+    if(c.advanced){
+        if(p[124]>1||p[125]>1||p[128]>1||p[129])return false;
+        c.invert=p[124];c.override_dc=p[125];c.overridden_dc=u(p+126);c.override_target=p[128];c.overridden_target=s16(p+130);
+        c.i_min=s16(p+132);c.i_max=s16(p+134);c.output_min=s16(p+136);c.output_max=s16(p+138);c.deadband=u(p+140);
+        if(c.i_min< -10000||c.i_min>0||c.i_max<0||c.i_max>10000||c.output_min< -10000||c.output_min>0||c.output_max<0||c.output_max>10000||c.deadband>2000||c.overridden_dc>9500)return false;
+    }
+    for(unsigned i=c.advanced?142:124;i<256;++i)if(p[i])return false;
     memcpy(c.source,p+116,7);
     if(c.source[0]){if(c.source[0]<4||c.source[0]>120||!c.source[1]||c.source[1]>=c.source[0]/2||c.source[2]>c.source[3]||c.source[3]>=c.source[0]-c.source[1]||c.source[4]>1||c.source[5]>3||c.source[6]>3)return false;}
     else for(unsigned i=1;i<7;++i)if(c.source[i])return false;
@@ -26,6 +33,8 @@ bool tunuino_vvt_decode(const uint8_t p[256],tunuino_vvt_config *out){
         ||c.rpm_min<500||c.rpm_min>12000||c.rpm_hysteresis>c.rpm_min-100||c.clt_min<0||c.clt_min>12000||c.clt_hysteresis>2000
         ||c.delay_ms>60000||c.max_age_ms<20||c.max_age_ms>1000||c.tracking_ms<100||c.tracking_ms>5000||!c.tolerance||c.tolerance>2000
         ||c.oil_off>c.oil_on||c.oil_on>20000||(c.oil_required&&!c.oil_off)||(c.enabled&&!c.channel))return false;
+    if(c.advanced&&((c.override_dc&&(c.overridden_dc<c.min_duty||c.overridden_dc>c.max_duty))
+        ||(c.override_target&&(c.overridden_target<c.minimum||c.overridden_target>c.maximum))))return false;
     *out=c;return true;
 }
 bool tunuino_vvt_window(const tunuino_vvt_config *c,uint16_t slots,uint16_t missing,uint16_t first,uint16_t last,uint8_t phase){
@@ -36,8 +45,10 @@ bool tunuino_vvt_window(const tunuino_vvt_config *c,uint16_t slots,uint16_t miss
 }
 void tunuino_vvt_resolve_target(tunuino_vvt_config *c,const uint8_t table[576],bool table_valid,bool map_valid,uint32_t rpm,uint32_t map){
     if(!c)return;
+    if(c->override_target){c->target=c->overridden_target;c->target_invalid=0;return;}
     c->target_invalid=c->table_mode&&(!table_valid||!map_valid||!tunuino_vvt_target_lookup(table,rpm,map,&c->target));
 }
+uint16_t tunuino_vvt_pwm_duty(const tunuino_vvt_config *c,const tunuino_vvt_state *s){return s->active?(c->invert?(uint16_t)(10000-s->duty):s->duty):0;}
 static void inhibit(tunuino_vvt_state *s,uint8_t reason,bool fault){
     s->active=0;s->duty=0;s->integral=0;s->edge=0;s->tracking=0;s->reason=reason;
     if(fault)s->latched=1;
@@ -68,17 +79,22 @@ void tunuino_vvt_update(const tunuino_vvt_config *c,tunuino_vvt_state *s,uint32_
     uint64_t step=active?edge-s->edge:0;
     if(step>(uint64_t)c->max_age_ms*1000u){inhibit(s,TUNUINO_VVT_FEEDBACK,true);return;}
     int32_t error=(int32_t)c->target-angle,sign=c->direction?-1:1;
+    const int32_t actual_error=error;const bool deadband=error<=c->deadband&&error>=-(int32_t)c->deadband;if(deadband)error=0;
     int64_t proportional=(int64_t)c->kp*error/1000;
     int64_t delta=(int64_t)c->ki*error*(int64_t)step/1000;
-    int64_t derivative=step?-(int64_t)c->kd*(angle-s->previous)*1000000/(1000*(int64_t)step):0;
+    int64_t derivative=step&&!deadband?-(int64_t)c->kd*(angle-s->previous)*1000000/(1000*(int64_t)step):0;
     int64_t candidate=s->integral+delta;
-    if(candidate>INT64_C(10000000000))candidate=INT64_C(10000000000);
-    if(candidate< -INT64_C(10000000000))candidate= -INT64_C(10000000000);
-    int64_t result=c->steady+sign*(proportional+candidate/1000000+derivative);
-    if(!((result>c->max_duty&&sign*delta>0)||(result<c->min_duty&&sign*delta<0)))s->integral=candidate;
-    result=c->steady+sign*(proportional+s->integral/1000000+derivative);
+    if(candidate>(int64_t)c->i_max*1000000)candidate=(int64_t)c->i_max*1000000;
+    if(candidate<(int64_t)c->i_min*1000000)candidate=(int64_t)c->i_min*1000000;
+    int64_t correction=proportional+candidate/1000000+derivative;
+    int64_t result=c->steady+sign*correction;
+    if(!((result>c->max_duty&&sign*delta>0)||(result<c->min_duty&&sign*delta<0)||(correction>c->output_max&&delta>0)||(correction<c->output_min&&delta<0)))s->integral=candidate;
+    correction=proportional+s->integral/1000000+derivative;
+    correction=correction<c->output_min?c->output_min:correction>c->output_max?c->output_max:correction;
+    result=c->steady+sign*correction;
     s->duty=(uint16_t)(result<c->min_duty?c->min_duty:result>c->max_duty?c->max_duty:result);
-    if(error>c->tolerance||error< -(int32_t)c->tolerance){uint32_t limit=(uint32_t)c->tracking_ms*1000u;s->tracking=step>=limit-s->tracking?limit:s->tracking+(uint32_t)step;
+    if(c->override_dc){s->duty=c->overridden_dc;s->integral=0;}
+    if(!c->override_dc&&(actual_error>c->tolerance||actual_error< -(int32_t)c->tolerance)){uint32_t limit=(uint32_t)c->tracking_ms*1000u;s->tracking=step>=limit-s->tracking?limit:s->tracking+(uint32_t)step;
         if(s->tracking>=limit){inhibit(s,TUNUINO_VVT_TRACKING,true);return;}}
     else s->tracking=0;
     s->previous=(int16_t)angle;s->edge=edge;s->active=1;s->reason=TUNUINO_VVT_ACTIVE;

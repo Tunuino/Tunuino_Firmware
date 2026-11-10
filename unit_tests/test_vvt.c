@@ -85,5 +85,18 @@ int main(void){
     put(all,TUNUINO_IO_VVT_TARGET_OFFSET+64,5000);assert(tunuino_device_validation_errors(all,sizeof(all))&TUNUINO_CONFIG_VVT);
     assert(!tunuino_device_validate(all,TUNUINO_IO_V7_SIZE));
     defaults(p);p[65]=0;memcpy(all,d.active,sizeof(all));memcpy(all+TUNUINO_IO_VTEC_OFFSET,p,256);assert(tunuino_device_restore(&d,all,TUNUINO_IO_V7_SIZE));assert(tunuino_vvt_target_empty(d.active+TUNUINO_IO_VVT_TARGET_OFFSET));assert(memcmp(d.active+TUNUINO_IO_VTEC_OFFSET,p,256)==0);
+    // Reference PID fields and overrides act in the native controller, not only in the editor.
+    defaults(p);p[64]=3;put(p,132,(uint16_t)(int16_t)-500);put(p,134,500);put(p,136,(uint16_t)(int16_t)-1500);put(p,138,1500);put(p,140,50);
+    assert(tunuino_vvt_decode(p,&config)&&config.advanced);config.delay_ms=0;
+    reset();tick(0,9000,true);assert(state.active&&state.duty==5500); // +15% correction cap.
+    tick(100000,7050,true);assert(state.duty==4000); // 0.5 degree deadband.
+    config.kp=0;config.ki=20000;config.deadband=0;reset();tick(0,7100,true);for(unsigned i=0;i<10;++i)tick(100000,7100,true);assert(state.integral==500000000&&state.duty==4500);
+    config.override_dc=1;config.overridden_dc=3500;config.invert=1;tick(100000,7100,true);assert(state.duty==3500&&state.integral==0&&tunuino_vvt_pwm_duty(&config,&state)==6500);
+    tick(1000,7100,false);assert(state.latched&&!state.active&&tunuino_vvt_pwm_duty(&config,&state)==0);
+    config.override_target=1;config.overridden_target=1000;config.table_mode=2;tunuino_vvt_resolve_target(&config,NULL,false,false,0,0);assert(!config.target_invalid&&config.target==1000);
+    memcpy(bad,p,256);bad[125]=1;put(bad,126,8500);assert(!tunuino_vvt_decode(bad,&config));memcpy(bad,p,256);put(bad,132,1);assert(!tunuino_vvt_decode(bad,&config));memcpy(bad,p,256);put(bad,136,1);assert(!tunuino_vvt_decode(bad,&config));memcpy(bad,p,256);bad[128]=1;put(bad,130,5000);assert(!tunuino_vvt_decode(bad,&config));
+    p[65]=0;p[123]=2;memcpy(all,d.active,sizeof(all));memcpy(all+TUNUINO_IO_VTEC_OFFSET,p,256);all[6]=1;put(all,16,25000);
+    assert(!tunuino_device_validate(all,sizeof(all)));memcpy(all+TUNUINO_IO_VVT_TARGET2_OFFSET,table,576);assert(tunuino_device_validate(all,sizeof(all)));
+    assert(!tunuino_device_validate(all,TUNUINO_IO_V8_SIZE)); // angle 2 cannot reference a missing page.
     puts("VVT RPM/MAP signed interpolation, travel validation, target source failure and legacy migration; VVT PID units, inverse direction, duplicate feedback, limits, stale/source faults, latches, timer wrap, PWM/watchdog and disabled legacy configuration passed (host simulation)");return 0;
 }
